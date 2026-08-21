@@ -3,10 +3,11 @@
 You are on Apple Silicon macOS. Build the native SwiftUI Hermes WebUI app from
 https://github.com/Alextechgamer/hermes-webui-mobile (or the local clone).
 
-THIS IS NOT A WEBVIEW. SwiftUI screens talk to hermes-webui REST+SSE:
-GET /api/auth/status, POST /api/auth/login, GET /api/sessions, GET /api/session,
-POST /api/session/new, POST /api/chat/start, GET /api/chat/stream (SSE event
-`token` with `{text}`), GET/POST /api/settings.
+THIS IS NOT A WEBVIEW. SwiftUI screens talk to hermes-webui REST+SSE.
+Contract: docs/API.md in this repo.
+
+Panels to keep (same rail as desktop): Chat, Tasks, Kanban, Skills, Memory,
+Spaces, Profiles, Todos, Insights, Logs, Dashboard, Settings.
 
 Steps:
 1. Confirm Xcode (`xcodebuild -version`).
@@ -17,6 +18,6 @@ Steps:
 5. `xcodebuild -project HermesWebUI.xcodeproj -scheme HermesWebUI -destination 'generic/platform=iOS' -allowProvisioningUpdates build`
 6. Install on device or Simulator. First screen: enter WebUI URL
    (example only: http://192.168.1.20:8787) — NOTHING is hardcoded.
-7. If auth is on, password login. Then conversations list, chat, settings.
+7. If auth is on, password login. Then hamburger → every panel above.
 
 Do not add WebView/WKWebView as product UI. Do not bake in any hostname, IP, or password.

@@ -3,8 +3,8 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var settings: AppSettings
     @StateObject private var store = AppStore()
-    @State private var showSettings = false
-    @State private var showSessions = false
+    @State private var showMenu = false
+    @State private var showConnect = false
     @State private var draft = ""
     @State private var password = ""
 
@@ -21,48 +21,37 @@ struct RootView: View {
                 ProgressView().tint(Palette.accent)
             }
         }
+        .preferredColorScheme(.dark)
         .task(id: settings.webuiURL) {
             if let url = settings.normalizedURL {
                 store.attach(url: url)
                 await store.bootstrap()
             }
         }
+        .sheet(isPresented: $showMenu) { MenuSheet(store: store, show: $showMenu) }
+        .sheet(isPresented: $showConnect) { ConnectSheet(settings: settings, store: store) }
     }
 
     private var connect: some View {
         VStack(spacing: 16) {
             titlebar
             Spacer()
-            Text("Connect to Hermes WebUI")
-                .font(.title2.weight(.semibold)).foregroundColor(Palette.text)
-            Text("Enter the URL of hermes-webui on your computer. Nothing is hardcoded.")
+            Text("Hermes").font(.largeTitle.bold()).foregroundColor(Palette.text)
+            Text("WebUI").font(.title).foregroundColor(Palette.accent)
+            Text("Native client — same panels as the desktop WebUI. Not a WebView. Enter the URL of hermes-webui on your computer.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(Palette.muted)
                 .padding(.horizontal, 28)
             TextField("http://192.168.1.20:8787", text: $settings.webuiURL)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(Palette.surface)
-                .cornerRadius(10)
-                .foregroundColor(Palette.text)
+                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                .padding(12).background(Palette.surface).cornerRadius(10).foregroundColor(Palette.text)
                 .padding(.horizontal, 28)
             TextField("Dashboard http://192.168.1.20:9119 (optional)", text: $settings.dashboardURL)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(Palette.surface)
-                .cornerRadius(10)
-                .foregroundColor(Palette.text)
+                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                .padding(12).background(Palette.surface).cornerRadius(10).foregroundColor(Palette.text)
                 .padding(.horizontal, 28)
-            Button("Continue") {
-                Task { await store.bootstrap() }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Palette.accent)
-            .foregroundColor(.black)
+            Button("Continue") { Task { await store.bootstrap() } }
+                .buttonStyle(.borderedProminent).tint(Palette.accent).foregroundColor(.black)
             Spacer()
         }
     }
@@ -71,11 +60,9 @@ struct RootView: View {
         VStack(spacing: 16) {
             titlebar
             Spacer()
-            Text("Enter your password to continue")
-                .foregroundColor(Palette.muted)
+            Text("Enter your password to continue").foregroundColor(Palette.muted)
             SecureField("Password", text: $password)
-                .padding(12).background(Palette.surface).cornerRadius(10)
-                .padding(.horizontal, 28)
+                .padding(12).background(Palette.surface).cornerRadius(10).padding(.horizontal, 28)
             Button("Sign in") { Task { await store.login(password) } }
                 .buttonStyle(.borderedProminent).tint(Palette.accent).foregroundColor(.black)
             if let e = store.error { Text(e).foregroundColor(.red).font(.footnote) }
@@ -86,101 +73,67 @@ struct RootView: View {
     private var main: some View {
         VStack(spacing: 0) {
             titlebar
-            ScrollView {
-                if store.panel != .chat {
-                    Text(store.detail.isEmpty ? "Loading…" : store.detail)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundColor(Palette.text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(store.messages, id: \.displayId) { m in
-                            bubble(m)
-                        }
-                        if !store.liveText.isEmpty {
-                            bubble(ChatMessage(role: "assistant", content: store.liveText))
-                        }
-                    }
-                    .padding(16)
+            if let e = store.error { Text(e).foregroundColor(.red).font(.footnote).padding(.horizontal, 16) }
+            Group {
+                switch store.panel {
+                case .chat: ChatPane(store: store, draft: $draft)
+                case .tasks: TasksPane(store: store)
+                case .kanban: KanbanPane(store: store)
+                case .skills: SkillsPane(store: store)
+                case .memory: MemoryPane(store: store)
+                case .spaces: SpacesPane(store: store)
+                case .profiles: ProfilesPane(store: store)
+                case .todos: TodosPane(store: store)
+                case .insights: InsightsPane(store: store)
+                case .logs: LogsPane(store: store)
+                case .dashboard: DashboardPane(store: store)
+                case .settings: SettingsPane(store: store, settings: settings)
                 }
             }
-            composer
         }
-        .sheet(isPresented: $showSessions) { menuSheet }
-        .sheet(isPresented: $showSettings) { SettingsSheet(store: store, settings: settings) }
     }
 
     private var titlebar: some View {
         HStack {
-            Button { showSessions = true } label: {
+            Button { showMenu = true } label: {
                 Image(systemName: "line.3.horizontal").foregroundColor(Palette.text)
             }
-            Text("Hermes").font(.headline).foregroundColor(Palette.text)
-            Spacer()
-            Button { Task { await store.newChat() } } label: {
-                Image(systemName: "plus").foregroundColor(Palette.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Hermes").font(.headline).foregroundColor(Palette.text)
+                Text(store.panel == .chat ? store.title : store.panel.label)
+                    .font(.caption).foregroundColor(Palette.muted).lineLimit(1)
             }
-            Button { showSettings = true } label: {
+            Spacer()
+            if store.panel == .chat {
+                if store.busy {
+                    Button { Task { await store.stop() } } label: {
+                        Image(systemName: "stop.circle").foregroundColor(Palette.accent)
+                    }
+                }
+                Button { Task { await store.newChat() } } label: {
+                    Image(systemName: "plus").foregroundColor(Palette.accent)
+                }
+            }
+            Button { showConnect = true } label: {
                 Image(systemName: "gearshape").foregroundColor(Palette.text)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(Palette.sidebar)
     }
+}
 
-    private var composer: some View {
-        Group {
-            if store.panel == .chat {
-                HStack(alignment: .bottom) {
-                    TextField("Message Hermes…", text: $draft, axis: .vertical)
-                        .lineLimit(1...6)
-                        .padding(10)
-                        .background(Palette.surface)
-                        .cornerRadius(10)
-                        .foregroundColor(Palette.text)
-                    Button {
-                        let t = draft; draft = ""
-                        Task { await store.send(t) }
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundColor(Palette.accent)
-                    }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.busy)
-                }
-                .padding(12)
-                .background(Palette.sidebar)
-            }
-        }
-    }
+struct MenuSheet: View {
+    @ObservedObject var store: AppStore
+    @Binding var show: Bool
 
-    private func bubble(_ m: ChatMessage) -> some View {
-        let mine = m.role == "user"
-        return HStack {
-            if mine { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 4) {
-                if let tool = m.tool_name, !tool.isEmpty {
-                    Text("⚙ \(tool)").font(.caption).foregroundColor(Palette.accent)
-                }
-                if !m.content.isEmpty {
-                    Text(m.content).foregroundColor(mine ? .black : Palette.text)
-                }
-            }
-            .padding(10)
-            .background(mine ? Palette.accent : Palette.surface)
-            .cornerRadius(12)
-            if !mine { Spacer(minLength: 40) }
-        }
-    }
-
-    private var menuSheet: some View {
+    var body: some View {
         NavigationStack {
             List {
                 Section("Hermes WebUI") {
                     ForEach(Panel.allCases) { p in
                         Button(p.label) {
-                            showSessions = false
+                            show = false
                             Task { await store.go(p) }
                         }
                         .foregroundColor(store.panel == p ? Palette.accent : Palette.text)
@@ -188,17 +141,23 @@ struct RootView: View {
                     }
                 }
                 Section("Conversations") {
-                    ForEach(store.sessions) { row in
+                    TextField("Search", text: $store.sessionQuery)
+                        .listRowBackground(Palette.surface)
+                    ForEach(filtered) { row in
                         Button {
-                            showSessions = false
+                            show = false
                             Task { await store.open(row) }
                         } label: {
                             VStack(alignment: .leading) {
-                                Text(row.displayTitle).foregroundColor(Palette.text)
+                                Text(row.displayTitle).foregroundColor(row.sid == store.currentSid ? Palette.accent : Palette.text)
                                 Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
                             }
                         }
                         .listRowBackground(Palette.surface)
+                    }
+                    .onDelete { idx in
+                        let rows = filtered
+                        for i in idx { Task { await store.deleteSession(rows[i].sid) } }
                     }
                 }
             }
@@ -206,88 +165,50 @@ struct RootView: View {
             .background(Palette.bg)
             .navigationTitle("Menu")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { showSessions = false }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { show = false } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("New") { Task { await store.newChat(); showSessions = false } }
+                    Button("New") { Task { await store.newChat(); show = false } }
                 }
             }
             .task { await store.loadSessions() }
         }
     }
+
+    private var filtered: [SessionRow] {
+        let q = store.sessionQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return store.sessions }
+        return store.sessions.filter { $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q) }
+    }
 }
 
-struct SettingsSheet: View {
-    @ObservedObject var store: AppStore
+struct ConnectSheet: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
-    @State private var items: [(key: String, type: String, value: String)] = []
-    @State private var edits: [String: String] = [:]
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 Section("Connection") {
                     TextField("WebUI URL", text: $settings.webuiURL)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                }
-                Section("WebUI settings") {
-                    ForEach(items, id: \.key) { it in
-                        if it.type == "bool" {
-                            Toggle(it.key, isOn: Binding(
-                                get: { (edits[it.key] ?? it.value) == "true" },
-                                set: { edits[it.key] = $0 ? "true" : "false" }
-                            ))
-                        } else {
-                            VStack(alignment: .leading) {
-                                Text(it.key).font(.caption).foregroundColor(Palette.muted)
-                                TextField("", text: Binding(
-                                    get: { edits[it.key] ?? it.value },
-                                    set: { edits[it.key] = $0 }
-                                ))
-                            }
-                        }
-                    }
+                        .textInputAutocapitalization(.never).keyboardType(.URL)
+                    TextField("Dashboard URL (optional)", text: $settings.dashboardURL)
+                        .textInputAutocapitalization(.never).keyboardType(.URL)
                 }
             }
-            .navigationTitle("Settings")
+            .navigationTitle("Connection")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Save") { Task { await save() } }
+                    Button("Save") {
+                        if let url = settings.normalizedURL {
+                            store.attach(url: url)
+                            Task { await store.bootstrap() }
+                        }
+                        dismiss()
+                    }
                 }
             }
-            .task { await load() }
         }
-    }
-
-    func load() async {
-        guard let c = store.client else { return }
-        do {
-            let d = try await c.settingsJSON()
-            items = d.keys.sorted().compactMap { k in
-                if k == "password_hash" { return nil }
-                let v = d[k]
-                if let b = v as? Bool { return (k, "bool", b ? "true" : "false") }
-                if let n = v as? NSNumber { return (k, "number", n.stringValue) }
-                if let s = v as? String { return (k, "string", s) }
-                return (k, "json", String(describing: v ?? ""))
-            }
-        } catch {}
-    }
-
-    func save() async {
-        guard let c = store.client else { return }
-        var body: [String: Any] = [:]
-        for (k, v) in edits {
-            if v == "true" || v == "false" { body[k] = (v == "true") }
-            else if let n = Int(v) { body[k] = n }
-            else { body[k] = v }
-        }
-        guard !body.isEmpty else { dismiss(); return }
-        try? await c.saveSettings(body)
-        dismiss()
     }
 }
