@@ -12,6 +12,8 @@ final class AppStore: ObservableObject {
     @Published var needsLogin = false
     @Published var loggedIn = false
     @Published var authEnabled = false
+    @Published var panel: Panel = .chat
+    @Published var detail: String = ""
     var currentSid: String = ""
     var client: APIClient?
 
@@ -80,7 +82,49 @@ final class AppStore: ObservableObject {
             messages = []
             liveText = ""
             title = "New conversation"
+            panel = .chat
             await loadSessions()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func go(_ p: Panel) async {
+        panel = p
+        title = p == .chat ? "Hermes" : p.label
+        await loadPanel()
+    }
+
+    func loadPanel() async {
+        guard let c = client else { return }
+        do {
+            switch panel {
+            case .chat:
+                await loadSessions()
+            case .tasks:
+                detail = try await c.getText("/api/crons")
+            case .kanban:
+                detail = (try? await c.getText("/api/kanban/tasks")) ?? (try await c.getText("/api/kanban/board"))
+            case .spaces:
+                detail = try await c.getText("/api/workspaces")
+            case .skills:
+                detail = try await c.getText("/api/skills")
+            case .memory:
+                detail = try await c.getText("/api/memory")
+            case .logs:
+                detail = try await c.getText("/api/logs")
+            case .profiles:
+                detail = try await c.getText("/api/profiles")
+            case .dashboard:
+                var s = ""
+                s += "HEALTH\n" + ((try? await c.getText("/health")) ?? "") + "\n\n"
+                s += "DASHBOARD STATUS\n" + ((try? await c.getText("/api/dashboard/status")) ?? "") + "\n\n"
+                s += "DASHBOARD CONFIG\n" + ((try? await c.getText("/api/dashboard/config")) ?? "") + "\n\n"
+                s += "AGENT HEALTH\n" + ((try? await c.getText("/api/health/agent")) ?? "")
+                detail = s
+            case .settings:
+                break
+            }
         } catch {
             self.error = error.localizedDescription
         }

@@ -1,7 +1,19 @@
 package com.hermes.webui
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
+
+enum class Panel(val label: String) {
+    Chat("Chat"),
+    Tasks("Tasks"),
+    Kanban("Kanban"),
+    Spaces("Spaces"),
+    Skills("Skills"),
+    Memory("Memory"),
+    Logs("Logs"),
+    Profiles("Profiles"),
+    Dashboard("Dashboard"),
+    Settings("Settings"),
+}
 
 @Serializable
 data class AuthStatus(
@@ -19,6 +31,7 @@ data class SessionRow(
     val message_count: Int? = null,
     val messages: Int? = null,
     val source: String? = null,
+    val pinned: Boolean? = null,
 ) {
     val sid: String get() = session_id ?: id ?: ""
     val displayTitle: String get() = title?.trim().orEmpty().ifBlank { "New conversation" }
@@ -37,8 +50,6 @@ data class ChatMsg(
 @Serializable
 data class ChatStart(val stream_id: String? = null, val session_id: String? = null, val title: String? = null)
 
-data class Bubble(
-    val role: String,
-    val text: String,
-    val tool: String? = null,
-)
+data class Bubble(val role: String, val text: String, val tool: String? = null)
+
+data class NamedRow(val title: String, val subtitle: String = "", val id: String = "")

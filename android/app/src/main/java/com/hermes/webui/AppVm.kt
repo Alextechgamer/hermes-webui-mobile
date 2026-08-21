@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.sse.EventSource
+import java.net.URI
 
 class AppVm(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
@@ -24,11 +25,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val needsLogin = mutableStateOf(false)
     val ready = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
+    val panel = mutableStateOf(Panel.Chat)
     val sessions = mutableStateListOf<SessionRow>()
     val bubbles = mutableStateListOf<Bubble>()
     val live = mutableStateOf("")
     val busy = mutableStateOf(false)
     val title = mutableStateOf("Hermes")
+    val rows = mutableStateListOf<NamedRow>()
+    val detail = mutableStateOf("")
+    val models = mutableStateListOf<String>()
+    val settingsItems = mutableStateListOf<Pair<String, String>>()
     var sid = ""
         private set
     private var es: EventSource? = null
@@ -56,6 +62,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 ready.value = true
                 withContext(Dispatchers.IO) { runCatching { c.refreshCsrf() } }
                 refreshSessions()
+                loadPanel(panel.value)
             }
         } catch (e: Exception) {
             error.value = e.message
@@ -71,21 +78,147 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 needsLogin.value = false
                 ready.value = true
                 refreshSessions()
-            } catch (e: Exception) {
+                loadPanel(panel.value)
+            } catch (_: Exception) {
                 error.value = "Login failed"
             }
         }
+    }
+
+    fun go(p: Panel) {
+        panel.value = p
+        title.value = if (p == Panel.Chat) "Hermes" else p.label
+        loadPanel(p)
+    }
+
+    fun loadPanel(p: Panel) {
+        val c = api ?: return
+        viewModelScope.launch {
+            error.value = null
+            try {
+                when (p) {
+                    Panel.Chat -> refreshSessions()
+                    Panel.Tasks -> replaceRows {
+                        c.namedList("/api/crons", "jobs", listOf("name", "id", "prompt"), listOf("schedule", "enabled", "status"))
+                    }
+                    Panel.Kanban -> replaceRows {
+                        c.namedList("/api/kanban/tasks", "tasks", listOf("title", "name", "id"), listOf("status", "column", "assignee"))
+                            .ifEmpty { c.namedList("/api/kanban/board", "columns", listOf("title", "name"), listOf("id")) }
+                    }
+                    Panel.Spaces -> replaceRows {
+                        c.namedList("/api/workspaces", "workspaces", listOf("name", "path", "label"), listOf("path", "last"))
+                    }
+                    Panel.Skills -> replaceRows {
+                        c.namedList("/api/skills", "skills", listOf("name", "title"), listOf("description", "category"))
+                    }
+                    Panel.Memory -> {
+                        val text = withContext(Dispatchers.IO) { c.prettyJson("/api/memory") }
+                        detail.value = text.take(12000)
+                        rows.clear()
+                    }
+                    Panel.Logs -> {
+                        val text = withContext(Dispatchers.IO) { c.getRaw("/api/logs").take(12000) }
+                        detail.value = text
+                        rows.clear()
+                    }
+                    Panel.Profiles -> replaceRows {
+                        c.namedList("/api/profiles", "profiles", listOf("name", "id"), listOf("model", "status"))
+                    }
+                    Panel.Dashboard -> loadDashboard()
+                    Panel.Settings -> loadSettings()
+                }
+            } catch (e: Exception) {
+                error.value = e.message
+            }
+        }
+    }
+
+    private suspend fun replaceRows(block: () -> List<NamedRow>) {
+        val list = withContext(Dispatchers.IO) { block() }
+        rows.clear(); rows.addAll(list)
+        detail.value = if (list.isEmpty()) "Nothing here yet." else ""
+    }
+
+    private suspend fun loadDashboard() {
+        val c = api ?: return
+        val sb = StringBuilder()
+        withContext(Dispatchers.IO) {
+            fun add(label: String, path: String) {
+                sb.append("── ").append(label).append(" ──\n")
+                sb.append(runCatching { c.prettyJson(path) }.getOrElse { it.message }).append("\n\n")
+            }
+            add("Health", "/health")
+            add("Agent health", "/api/health/agent")
+            add("System", "/api/system/health")
+            add("Dashboard status", "/api/dashboard/status")
+            add("Dashboard config", "/api/dashboard/config")
+            val dash = prefs.dashboardUrl.ifBlank { derivedDashboardUrl() }
+            if (dash.isNotBlank()) {
+                sb.append("── Usage dashboard ").append(dash).append(" ──\n")
+                sb.append(runCatching {
+                    okhttp3.OkHttpClient().newCall(
+                        okhttp3.Request.Builder().url("$dash/api/meta").build()
+                    ).execute().use { it.body?.string().orEmpty().take(4000) }
+                }.getOrElse { it.message }).append("\n")
+            }
+        }
+        detail.value = sb.toString()
+        rows.clear()
+        val dash = prefs.dashboardUrl.ifBlank { derivedDashboardUrl() }
+        if (dash.isNotBlank()) rows.add(NamedRow("Open dashboard", dash, dash))
+    }
+
+    fun derivedDashboardUrl(): String {
+        val u = prefs.baseUrl.ifBlank { return "" }
+        return try {
+            val uri = URI(if (u.contains("://")) u else "http://$u")
+            val host = uri.host ?: return ""
+            "http://$host:9119"
+        } catch (_: Exception) { "" }
+    }
+
+    private suspend fun loadSettings() {
+        val c = api ?: return
+        val map = withContext(Dispatchers.IO) {
+            try {
+                val obj = Json.parseToJsonElement(c.settingsRaw()) as? JsonObject ?: return@withContext emptyList()
+                obj.filterKeys { it != "password_hash" }.map { (k, v) ->
+                    k to ((v as? JsonPrimitive)?.contentOrNull ?: v.toString())
+                }.sortedBy { it.first }
+            } catch (_: Exception) { emptyList() }
+        }
+        settingsItems.clear(); settingsItems.addAll(map)
+        rows.clear()
+        detail.value = ""
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val el = c.getJson("/api/models")
+                val names = mutableListOf<String>()
+                fun walk(e: kotlinx.serialization.json.JsonElement) {
+                    when (e) {
+                        is kotlinx.serialization.json.JsonArray -> e.forEach { walk(it) }
+                        is JsonObject -> {
+                            val id = e["id"]?.let { (it as? JsonPrimitive)?.content }
+                                ?: e["name"]?.let { (it as? JsonPrimitive)?.content }
+                            if (!id.isNullOrBlank()) names.add(id)
+                            e.values.forEach { walk(it) }
+                        }
+                        else -> {}
+                    }
+                }
+                walk(el)
+                names.distinct()
+            }.getOrDefault(emptyList())
+        }.let { models.clear(); models.addAll(it.take(80)) }
     }
 
     fun refreshSessions() {
         val c = api ?: return
         viewModelScope.launch {
             try {
-                val rows = withContext(Dispatchers.IO) { c.sessions() }
-                sessions.clear(); sessions.addAll(rows)
-            } catch (e: Exception) {
-                error.value = e.message
-            }
+                val list = withContext(Dispatchers.IO) { c.sessions() }
+                sessions.clear(); sessions.addAll(list)
+            } catch (e: Exception) { error.value = e.message }
         }
     }
 
@@ -94,6 +227,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         sid = row.sid
         title.value = row.displayTitle
         live.value = ""
+        panel.value = Panel.Chat
         viewModelScope.launch {
             try {
                 val msgs = withContext(Dispatchers.IO) { c.messages(row.sid) }
@@ -103,9 +237,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         bubbles.add(Bubble(it.role, it.content, it.tool_name ?: it.name))
                     }
                 }
-            } catch (e: Exception) {
-                error.value = e.message
-            }
+            } catch (e: Exception) { error.value = e.message }
         }
     }
 
@@ -115,10 +247,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             try {
                 sid = withContext(Dispatchers.IO) { c.newSession() }
                 bubbles.clear(); live.value = ""; title.value = "New conversation"
+                panel.value = Panel.Chat
                 refreshSessions()
-            } catch (e: Exception) {
-                error.value = e.message
-            }
+            } catch (e: Exception) { error.value = e.message }
         }
     }
 
@@ -133,6 +264,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             bubbles.add(Bubble("user", t))
             busy.value = true
             live.value = ""
+            panel.value = Panel.Chat
             try {
                 val start = withContext(Dispatchers.IO) { c.startChat(sid, t) }
                 val streamId = start.stream_id.orEmpty()
@@ -142,8 +274,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         es = c.stream(streamId, { ev, data -> onSse(ev, data) }, {
                             viewModelScope.launch(Dispatchers.Main) {
                                 if (live.value.isNotEmpty()) {
-                                    bubbles.add(Bubble("assistant", live.value))
-                                    live.value = ""
+                                    bubbles.add(Bubble("assistant", live.value)); live.value = ""
                                 }
                                 busy.value = false
                             }
@@ -157,12 +288,31 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun stop() {
+        val c = api ?: return
+        es?.cancel()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { c.cancelChat(sid) }
+            busy.value = false
+        }
+    }
+
+    fun cronAction(id: String, action: String) {
+        if (id.isBlank()) return
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val quoted = "\"" + id.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+                runCatching { c.postRaw("/api/crons/$action", """{"id":$quoted}""") }
+            }
+            loadPanel(Panel.Tasks)
+        }
+    }
+
     private fun onSse(ev: String, data: String) {
         val e = ev.lowercase()
         viewModelScope.launch(Dispatchers.Main) {
-            val obj = runCatching {
-                Json.parseToJsonElement(data).jsonObject
-            }.getOrNull()
+            val obj = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull()
             when {
                 e == "token" || e == "delta" -> {
                     val piece = obj?.get("text")?.let { (it as? JsonPrimitive)?.contentOrNull }
@@ -178,8 +328,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
                 e == "done" || e.contains("complete") -> {
                     if (live.value.isNotEmpty()) {
-                        bubbles.add(Bubble("assistant", live.value))
-                        live.value = ""
+                        bubbles.add(Bubble("assistant", live.value)); live.value = ""
                     }
                     busy.value = false
                 }
@@ -187,19 +336,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveUrl(url: String) {
+    fun saveUrl(url: String, dashboard: String = prefs.dashboardUrl) {
         prefs.baseUrl = url
+        prefs.dashboardUrl = dashboard
         reconnect()
-    }
-
-    fun loadSettingsMap(): Map<String, String> {
-        val c = api ?: return emptyMap()
-        return try {
-            val raw = c.settingsRaw()
-            val obj = Json.parseToJsonElement(raw) as? JsonObject ?: return emptyMap()
-            obj.filterKeys { it != "password_hash" }.mapValues { (_, v) ->
-                (v as? JsonPrimitive)?.contentOrNull ?: v.toString()
-            }
-        } catch (_: Exception) { emptyMap() }
     }
 }

@@ -48,6 +48,15 @@ struct RootView: View {
                 .cornerRadius(10)
                 .foregroundColor(Palette.text)
                 .padding(.horizontal, 28)
+            TextField("Dashboard http://192.168.1.20:9119 (optional)", text: $settings.dashboardURL)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .padding(12)
+                .background(Palette.surface)
+                .cornerRadius(10)
+                .foregroundColor(Palette.text)
+                .padding(.horizontal, 28)
             Button("Continue") {
                 Task { await store.bootstrap() }
             }
@@ -78,19 +87,27 @@ struct RootView: View {
         VStack(spacing: 0) {
             titlebar
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(store.messages, id: \.displayId) { m in
-                        bubble(m)
+                if store.panel != .chat {
+                    Text(store.detail.isEmpty ? "Loading…" : store.detail)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundColor(Palette.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(store.messages, id: \.displayId) { m in
+                            bubble(m)
+                        }
+                        if !store.liveText.isEmpty {
+                            bubble(ChatMessage(role: "assistant", content: store.liveText))
+                        }
                     }
-                    if !store.liveText.isEmpty {
-                        bubble(ChatMessage(role: "assistant", content: store.liveText))
-                    }
+                    .padding(16)
                 }
-                .padding(16)
             }
             composer
         }
-        .sheet(isPresented: $showSessions) { sessionsSheet }
+        .sheet(isPresented: $showSessions) { menuSheet }
         .sheet(isPresented: $showSettings) { SettingsSheet(store: store, settings: settings) }
     }
 
@@ -113,25 +130,29 @@ struct RootView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom) {
-            TextField("Message Hermes…", text: $draft, axis: .vertical)
-                .lineLimit(1...6)
-                .padding(10)
-                .background(Palette.surface)
-                .cornerRadius(10)
-                .foregroundColor(Palette.text)
-            Button {
-                let t = draft; draft = ""
-                Task { await store.send(t) }
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundColor(Palette.accent)
+        Group {
+            if store.panel == .chat {
+                HStack(alignment: .bottom) {
+                    TextField("Message Hermes…", text: $draft, axis: .vertical)
+                        .lineLimit(1...6)
+                        .padding(10)
+                        .background(Palette.surface)
+                        .cornerRadius(10)
+                        .foregroundColor(Palette.text)
+                    Button {
+                        let t = draft; draft = ""
+                        Task { await store.send(t) }
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(Palette.accent)
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.busy)
+                }
+                .padding(12)
+                .background(Palette.sidebar)
             }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.busy)
         }
-        .padding(12)
-        .background(Palette.sidebar)
     }
 
     private func bubble(_ m: ChatMessage) -> some View {
@@ -153,23 +174,37 @@ struct RootView: View {
         }
     }
 
-    private var sessionsSheet: some View {
+    private var menuSheet: some View {
         NavigationStack {
-            List(store.sessions) { row in
-                Button {
-                    showSessions = false
-                    Task { await store.open(row) }
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(row.displayTitle).foregroundColor(Palette.text)
-                        Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+            List {
+                Section("Hermes WebUI") {
+                    ForEach(Panel.allCases) { p in
+                        Button(p.label) {
+                            showSessions = false
+                            Task { await store.go(p) }
+                        }
+                        .foregroundColor(store.panel == p ? Palette.accent : Palette.text)
+                        .listRowBackground(Palette.surface)
                     }
                 }
-                .listRowBackground(Palette.surface)
+                Section("Conversations") {
+                    ForEach(store.sessions) { row in
+                        Button {
+                            showSessions = false
+                            Task { await store.open(row) }
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(row.displayTitle).foregroundColor(Palette.text)
+                                Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+                            }
+                        }
+                        .listRowBackground(Palette.surface)
+                    }
+                }
             }
             .scrollContentBackground(.hidden)
             .background(Palette.bg)
-            .navigationTitle("Conversations")
+            .navigationTitle("Menu")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { showSessions = false }

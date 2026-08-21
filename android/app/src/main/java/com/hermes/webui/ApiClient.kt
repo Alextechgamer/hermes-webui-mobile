@@ -1,6 +1,8 @@
 package com.hermes.webui
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -146,6 +148,55 @@ class ApiClient(base: String) {
     fun settingsRaw(): String = exec(req("GET", "/api/settings"))
 
     fun saveSettings(body: String) { exec(req("POST", "/api/settings", body)) }
+
+    fun getRaw(path: String): String = exec(req("GET", path))
+
+    fun postRaw(path: String, body: String = "{}"): String = exec(req("POST", path, body))
+
+    fun getJson(path: String): JsonElement = json.parseToJsonElement(getRaw(path))
+
+    fun cancelChat(sid: String) {
+        runCatching { postRaw("/api/chat/cancel", """{"session_id":${q(sid)}}""") }
+    }
+
+    fun namedList(path: String, arrayKey: String, titleKeys: List<String>, subKeys: List<String> = emptyList()): List<NamedRow> {
+        return try {
+            val el = getJson(path)
+            val arr: JsonArray = when {
+                el is JsonArray -> el
+                el is JsonObject && el[arrayKey] is JsonArray -> el[arrayKey]!!.jsonArray
+                else -> return emptyList()
+            }
+            arr.mapNotNull { item ->
+                when (item) {
+                    is JsonObject -> {
+                        fun pick(keys: List<String>): String {
+                            for (k in keys) {
+                                val v = item[k]?.jsonPrimitive?.content
+                                if (!v.isNullOrBlank()) return v
+                            }
+                            return ""
+                        }
+                        val title = pick(titleKeys).ifBlank { item.keys.firstOrNull() ?: "" }
+                        NamedRow(title, pick(subKeys), pick(listOf("id", "job_id", "name", "path", "session_id")))
+                    }
+                    else -> {
+                        val s = item.jsonPrimitive.content
+                        if (s.isBlank()) null else NamedRow(s)
+                    }
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    fun prettyJson(path: String): String {
+        return try {
+            val el = getJson(path)
+            json.encodeToString(JsonElement.serializer(), el)
+        } catch (e: Exception) { e.message ?: "error" }
+    }
+
+    val hostRoot: String get() = root
 }
 
 class AuthException : RuntimeException("auth required")

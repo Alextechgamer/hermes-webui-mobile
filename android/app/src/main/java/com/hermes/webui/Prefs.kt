@@ -21,5 +21,10 @@ class Prefs(ctx: Context) {
         get() = prefs.getString("url", "") ?: ""
         set(v) { prefs.edit().putString("url", v.trim()).apply() }
 
+    /** Optional Hermes Dashboard URL (official :9119 or usage dashboard). Empty = derive from WebUI host:9119 */
+    var dashboardUrl: String
+        get() = prefs.getString("dashboard_url", "") ?: ""
+        set(v) { prefs.edit().putString("dashboard_url", v.trim()).apply() }
+
     val isConfigured: Boolean get() = baseUrl.isNotBlank()
 }

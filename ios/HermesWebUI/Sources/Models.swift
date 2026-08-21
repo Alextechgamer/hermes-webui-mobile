@@ -58,6 +58,25 @@ struct SessionPayload: Codable {
     }
 }
 
+enum Panel: String, CaseIterable, Identifiable {
+    case chat, tasks, kanban, spaces, skills, memory, logs, profiles, dashboard, settings
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .chat: return "Chat"
+        case .tasks: return "Tasks"
+        case .kanban: return "Kanban"
+        case .spaces: return "Spaces"
+        case .skills: return "Skills"
+        case .memory: return "Memory"
+        case .logs: return "Logs"
+        case .profiles: return "Profiles"
+        case .dashboard: return "Dashboard"
+        case .settings: return "Settings"
+        }
+    }
+}
+
 struct ChatStart: Codable {
     var stream_id: String? = nil
     var session_id: String? = nil

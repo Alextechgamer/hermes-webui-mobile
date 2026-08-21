@@ -140,4 +140,13 @@ final class APIClient {
     func saveSettings(_ body: [String: Any]) async throws {
         _ = try await postJSON("/api/settings", body: body)
     }
+
+    func getText(_ path: String) async throws -> String {
+        let data = try await getData(path)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func cancelChat(sessionId: String) async {
+        _ = try? await postJSON("/api/chat/cancel", body: ["session_id": sessionId])
+    }
 }
