@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.vision/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.ap_
+
+# iOS / Xcode
+ios/*.xcodeproj/
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Secrets / local runtime — never commit
+.env
+*.env
+.dashboard-webui-auth
+config.env
+
+# Editors
+.idea/
+.vscode/
+*.iml

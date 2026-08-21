@@ -1,0 +1,30 @@
+name: HermesWebUI
+options:
+  bundleIdPrefix: com.hermes
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  HermesWebUI:
+    type: application
+    platform: iOS
+    sources:
+      - path: HermesWebUI/Sources
+    resources:
+      - path: HermesWebUI/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hermes.webui
+        PRODUCT_NAME: Hermes WebUI
+        INFOPLIST_FILE: HermesWebUI/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: HermesWebUI/Resources/Info.plist
