@@ -132,10 +132,28 @@ private fun EmptyChat() {
 private fun MessageRow(vm: AppVm, b: ChatMsg, live: Boolean = false) {
     when (b.role) {
         "user" -> UserBubble(b)
+        "steer" -> SteerCard(b)
         "thinking" -> ThinkingCard(b)
         "tool" -> ToolCard(b)
         "system" -> Text(b.content, color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
         else -> AssistantBlock(vm, b, live)
+    }
+}
+
+@Composable
+private fun SteerCard(b: ChatMsg) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(WuiShapeMd)
+            .background(Wui.AccentBg)
+            .border(1.dp, Wui.AccentBgStrong, WuiShapeMd)
+            .padding(10.dp, 8.dp),
+    ) {
+        Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(b.content, color = Wui.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("Hermes will pick this up at the next tool.", color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -375,6 +393,9 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 FooterChip(Icons.Outlined.Folder, workspace) { vm.go(Panel.Files) }
                 if (model.isNotBlank()) FooterChip(Icons.Outlined.Memory, model.take(22)) { showModels = !showModels }
                 Spacer(Modifier.width(8.dp))
+                if (vm.busy.value) {
+                    Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                }
                 val canSend = draft.isNotBlank() || vm.pendingAttach.isNotEmpty()
                 Box(
                     Modifier
@@ -386,7 +407,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 ) {
                     Icon(
                         Icons.Outlined.ArrowUpward,
-                        if (vm.busy.value) "Queue message" else "Send",
+                        if (vm.busy.value) "Steer" else "Send",
                         tint = Wui.Bg,
                         modifier = Modifier.size(16.dp),
                     )

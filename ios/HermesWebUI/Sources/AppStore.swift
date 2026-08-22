@@ -274,7 +274,9 @@ final class AppStore: ObservableObject {
         if !load.title.isEmpty { title = load.title }
         if !load.model.isEmpty && selectedModel.isEmpty { selectedModel = load.model }
         truncated = load.truncated
-        messages = load.messages.filter { ["user", "assistant", "tool", "thinking", "system"].contains($0.role) }
+        let incoming = load.messages.filter { ["user", "assistant", "tool", "thinking", "system"].contains($0.role) }
+        let steers = messages.filter { $0.role == "steer" }
+        messages = incoming + steers
         todos = load.todos
         let liveId = load.activeStreamId
         if !liveId.isEmpty {
@@ -292,10 +294,15 @@ final class AppStore: ObservableObject {
         pendingAttach.removeAll()
         if trimmed.isEmpty && files.isEmpty { return }
         let shown = trimmed.isEmpty ? files.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") : trimmed
-        messages.append(ChatMessage(id: "u-\(Int(Date().timeIntervalSince1970 * 1000))", role: "user", content: shown))
+        messages.append(ChatMessage(id: "u-\(Int(Date().timeIntervalSince1970 * 1000))", role: busy ? "steer" : "user", content: shown))
         let payload = trimmed.isEmpty ? "See attached files." : trimmed
         if busy {
-            outbound.append((payload, files))
+            if currentSid.isEmpty {
+                outbound.append((payload, files))
+                return
+            }
+            let ok = await client?.steer(sessionId: currentSid, text: payload) ?? false
+            if !ok { outbound.append((payload, files)) }
             return
         }
         await startTurn(payload, files)

@@ -195,6 +195,13 @@ class ApiClient(base: String, prefs: Prefs) {
         return el.str("stream_id")
     }
 
+    fun steer(sid: String, text: String): Boolean {
+        if (sid.isBlank() || text.isBlank()) return false
+        val parts = listOf("\"session_id\":${q(sid)}", "\"text\":${q(text)}")
+        val el = json.parseToJsonElement(exec(req("POST", "/api/chat/steer", "{" + parts.joinToString(",") + "}"))).asObj()
+        return el.bool("accepted")
+    }
+
     fun upload(sid: String, file: java.io.File, mime: String = "application/octet-stream"): PendingAttach {
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("session_id", sid)

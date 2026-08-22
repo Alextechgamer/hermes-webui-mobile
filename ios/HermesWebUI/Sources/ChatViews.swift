@@ -105,6 +105,7 @@ struct ChatPane: View {
     private func row(_ m: ChatMessage, live: Bool = false) -> some View {
         switch m.role {
         case "user": UserBubble(text: m.content)
+        case "steer": SteerCard(text: m.content)
         case "thinking": ThinkingCard(m: m)
         case "tool": ToolCard(m: m)
         case "system":
@@ -216,6 +217,12 @@ struct ChatPane: View {
                             }
                         }
                         Spacer(minLength: 8)
+                        if store.busy {
+                            Text("STEER")
+                                .font(.system(size: 10, weight: .bold))
+                                .tracking(0.8)
+                                .foregroundColor(Palette.accent)
+                        }
                         Button {
                             let t = draft
                             draft = ""
@@ -243,6 +250,28 @@ struct ChatPane: View {
             .padding(.bottom, 12)
         }
         .background(Palette.bg)
+    }
+}
+
+struct SteerCard: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("STEER")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1)
+                .foregroundColor(Palette.accent)
+            Text(text).font(.system(size: 13)).foregroundColor(Palette.text)
+            Text("Hermes will pick this up at the next tool.")
+                .font(.system(size: 11))
+                .foregroundColor(Palette.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Palette.accent.opacity(0.12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+        .cornerRadius(12)
+        .padding(.vertical, 6)
     }
 }
 

@@ -334,10 +334,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (load.title.isNotBlank()) title.value = load.title
         if (load.model.isNotBlank() && selectedModel.value.isBlank()) selectedModel.value = load.model
         truncated.value = load.truncated
+        val steers = bubbles.filter { it.role == "steer" }
         bubbles.clear()
         load.messages.forEach { m ->
             if (m.role in setOf("user", "assistant", "tool", "thinking", "system")) bubbles.add(m)
         }
+        bubbles.addAll(steers)
         todos.clear(); todos.addAll(load.todos)
         val liveId = load.activeStreamId
         if (liveId.isNotBlank()) {
@@ -391,11 +393,21 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         if (t.isEmpty() && files.isEmpty()) return
         pendingAttach.clear()
         val shown = t.ifBlank { files.joinToString { it.substringAfterLast('/') } }
-        bubbles.add(ChatMsg("u-${System.currentTimeMillis()}", "user", shown))
         if (busy.value) {
-            outbound.addLast(t.ifBlank { "(attachments)" } to files)
+            bubbles.add(ChatMsg("s-${System.currentTimeMillis()}", "steer", shown))
+            viewModelScope.launch {
+                val c = api ?: return@launch
+                if (sid.isBlank()) {
+                    outbound.addLast(t.ifBlank { "(attachments)" } to files)
+                    return@launch
+                }
+                val text = t.ifBlank { "See attached files." }
+                val ok = withContext(Dispatchers.IO) { runCatching { c.steer(sid, text) }.getOrDefault(false) }
+                if (!ok) outbound.addLast(text to files)
+            }
             return
         }
+        bubbles.add(ChatMsg("u-${System.currentTimeMillis()}", "user", shown))
         startTurn(t.ifBlank { "See attached files." }, files)
     }
 

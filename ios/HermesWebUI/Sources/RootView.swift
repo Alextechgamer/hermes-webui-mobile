@@ -258,9 +258,11 @@ struct RootView: View {
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showMenu = false } }
                 DrawerBody(store: store, show: $showMenu)
-                    .frame(width: geo.size.width * 0.92)
-                    .background(Palette.sidebar)
-                    .ignoresSafeArea()
+                    .padding(.top, geo.safeAreaInsets.top)
+                    .padding(.bottom, geo.safeAreaInsets.bottom)
+                    .frame(width: min(geo.size.width * 0.92, 360), alignment: .topLeading)
+                    .frame(maxHeight: .infinity)
+                    .background(Palette.sidebar.ignoresSafeArea(edges: .vertical))
             }
         }
         .transition(.opacity)
@@ -288,7 +290,7 @@ struct DrawerBody: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 18)
+            .padding(.top, 8)
             .padding(.bottom, 8)
 
             ScrollView {

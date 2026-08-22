@@ -201,6 +201,17 @@ final class APIClient {
         return try JSONDecoder().decode(ChatStart.self, from: try await postJSON("/api/chat/start", body: body))
     }
 
+    func steer(sessionId: String, text: String) async -> Bool {
+        guard !sessionId.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        do {
+            let data = try await postJSON("/api/chat/steer", body: ["session_id": sessionId, "text": text])
+            let obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            return (obj["accepted"] as? Bool) ?? false
+        } catch {
+            return false
+        }
+    }
+
     func upload(sid: String, fileURL: URL, filename: String, mime: String) async throws -> PendingAttach {
         var req = URLRequest(url: url("/api/upload"))
         req.httpMethod = "POST"
