@@ -68,9 +68,16 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val voiceAvailable = mutableStateOf(false)
     var sid = ""
         private set
+    private var streamId = ""
+    private var afterSeq = 0L
+    private var afterEventId = ""
+    private var userStopped = false
     private var es: EventSource? = null
+    private var sessionEs: EventSource? = null
+    private var listEs: EventSource? = null
     private var termEs: EventSource? = null
     private var poll: Job? = null
+    private var reconnect: Job? = null
     private var player: android.media.MediaPlayer? = null
     private var recorder: android.media.MediaRecorder? = null
     private var recFile: java.io.File? = null
@@ -100,6 +107,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 refreshSessions()
                 loadModels()
                 startPoll()
+                attachListStream()
+                if (prefs.lastSid.isNotBlank()) open(prefs.lastSid, keepPanel = true)
                 voiceAvailable.value = withContext(Dispatchers.IO) { runCatching { c.transcribeAvailable() }.getOrDefault(false) }
             }
         } catch (e: Exception) {
@@ -210,8 +219,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun open(id: String, keepPanel: Boolean = false) {
         val c = api ?: return
         sid = id
+        prefs.lastSid = id
         live.value = ""
         if (!keepPanel) panel.value = Panel.Chat
+        attachSessionStream()
         viewModelScope.launch {
             try {
                 val load = withContext(Dispatchers.IO) { c.loadSession(id) }
@@ -229,8 +240,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             if (m.role in setOf("user", "assistant", "tool", "system")) bubbles.add(m)
         }
         todos.clear(); todos.addAll(load.todos)
-        if (load.activeStreamId.isNotBlank() && !busy.value) {
-            attachStream(load.activeStreamId)
+        val liveId = load.activeStreamId
+        if (liveId.isNotBlank()) {
+            if (streamId != liveId || es == null) attachStream(liveId, replay = streamId == liveId && afterSeq > 0)
+        } else if (!userStopped && busy.value) {
+            settleTurn()
         }
     }
 
@@ -250,10 +264,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 sid = withContext(Dispatchers.IO) { c.newSession() }
+                prefs.lastSid = sid
                 bubbles.clear(); live.value = ""; todos.clear()
                 title.value = "New conversation"
                 truncated.value = false
                 panel.value = Panel.Chat
+                attachSessionStream()
                 refreshSessions()
             } catch (e: Exception) { error.value = e.message }
         }
@@ -281,40 +297,86 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             bubbles.add(ChatMsg("u-${System.currentTimeMillis()}", "user", t))
             busy.value = true
             live.value = ""
+            userStopped = false
+            afterSeq = 0
+            afterEventId = ""
             panel.value = Panel.Chat
+            keepAlive(true)
             try {
-                val streamId = withContext(Dispatchers.IO) {
+                val newStream = withContext(Dispatchers.IO) {
                     c.startChat(sid, t, selectedModel.value.ifBlank { null })
                 }
-                if (streamId.isNotEmpty()) attachStream(streamId) else busy.value = false
+                if (newStream.isNotEmpty()) attachStream(newStream, replay = false) else {
+                    // Start may return empty if already running — attach via status.
+                    recoverLive()
+                }
             } catch (e: Exception) {
                 error.value = e.message
                 busy.value = false
+                keepAlive(false)
             }
         }
     }
 
-    private fun attachStream(streamId: String) {
+    private fun attachStream(id: String, replay: Boolean) {
         val c = api ?: return
+        if (id.isBlank()) return
+        streamId = id
+        prefs.lastStreamId = id
         busy.value = true
+        keepAlive(true)
         es?.cancel()
-        es = c.stream(streamId, { ev, data -> onSse(ev, data) }, {
-            viewModelScope.launch(Dispatchers.Main) {
-                flushLive()
-                busy.value = false
-                refreshSessions()
+        es = c.stream(
+            streamId = id,
+            replay = replay,
+            afterSeq = afterSeq,
+            afterEventId = afterEventId,
+            onEvent = { ev, data, eid -> onSse(ev, data, eid) },
+            onClosed = { onChatStreamClosed() },
+        )
+    }
+
+    private fun onChatStreamClosed() {
+        if (userStopped) {
+            viewModelScope.launch(Dispatchers.Main) { settleTurn() }
+            return
+        }
+        reconnect?.cancel()
+        reconnect = viewModelScope.launch {
+            delay(800)
+            val c = api ?: return@launch
+            val id = streamId.ifBlank { prefs.lastStreamId }
+            if (id.isBlank() || sid.isBlank()) {
+                recoverLive()
+                return@launch
             }
-        })
+            val still = withContext(Dispatchers.IO) { runCatching { c.streamStatus(id) }.getOrDefault(false) }
+            if (still) {
+                attachStream(id, replay = true)
+            } else {
+                recoverLive()
+            }
+        }
     }
 
     fun stop() {
         val c = api ?: return
+        userStopped = true
+        reconnect?.cancel()
         es?.cancel()
         viewModelScope.launch {
             withContext(Dispatchers.IO) { c.cancelChat(sid) }
-            flushLive()
-            busy.value = false
+            settleTurn()
         }
+    }
+
+    private fun settleTurn() {
+        flushLive()
+        busy.value = false
+        streamId = ""
+        prefs.lastStreamId = ""
+        keepAlive(false)
+        refreshSessions()
     }
 
     fun cronAction(id: String, action: String) {
@@ -429,7 +491,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         poll?.cancel()
         poll = viewModelScope.launch {
             while (isActive) {
-                delay(2500)
+                delay(4000)
                 val c = api ?: continue
                 if (!ready.value || sid.isBlank()) continue
                 runCatching {
@@ -437,8 +499,91 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     val q = withContext(Dispatchers.IO) { c.clarify(sid) }
                     approval.value = a
                     clarify.value = q
+                    val (liveId, count) = withContext(Dispatchers.IO) {
+                        runCatching { c.sessionStatus(sid) }.getOrDefault("" to 0)
+                    }
+                    if (liveId.isNotBlank() && (streamId != liveId || es == null) && !userStopped) {
+                        attachStream(liveId, replay = streamId == liveId)
+                    }
+                    if (count > 0 && count > bubbles.size && !busy.value) {
+                        val load = withContext(Dispatchers.IO) { c.loadSession(sid) }
+                        applyLoad(load)
+                    }
                 }
             }
+        }
+    }
+
+    fun onForeground() {
+        if (!ready.value) return
+        recoverLive()
+        attachSessionStream()
+        attachListStream()
+    }
+
+    fun recoverLive() {
+        val c = api ?: return
+        val id = sid.ifBlank { prefs.lastSid }
+        if (id.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val load = withContext(Dispatchers.IO) { c.loadSession(id) }
+                if (sid.isBlank()) {
+                    sid = id
+                    attachSessionStream()
+                }
+                applyLoad(load)
+            } catch (e: Exception) {
+                error.value = e.message
+            }
+        }
+    }
+
+    private fun attachSessionStream() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        sessionEs?.cancel()
+        sessionEs = c.streamSession(sid, bubbles.size, { ev, data ->
+            val e = ev.lowercase()
+            val obj = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull()
+            when {
+                e == "server_turn_started" -> {
+                    val id = obj?.prim("stream_id", "streamId") ?: ""
+                    if (id.isNotBlank() && !userStopped) {
+                        viewModelScope.launch(Dispatchers.Main) { attachStream(id, replay = streamId == id) }
+                    }
+                }
+                e == "session_updated" || e.contains("complete") -> {
+                    viewModelScope.launch { recoverLive() }
+                }
+            }
+        }, {
+            viewModelScope.launch {
+                delay(1500)
+                if (ready.value && sid.isNotBlank()) attachSessionStream()
+            }
+        })
+    }
+
+    private fun attachListStream() {
+        val c = api ?: return
+        listEs?.cancel()
+        listEs = c.streamSessionList({ ev, _ ->
+            if (ev.contains("session") || ev.isEmpty() || ev == "sessions_changed") {
+                refreshSessions()
+            }
+        }, {
+            viewModelScope.launch {
+                delay(2000)
+                if (ready.value) attachListStream()
+            }
+        })
+    }
+
+    private fun keepAlive(on: Boolean) {
+        val ctx = getApplication<Application>()
+        runCatching {
+            if (on) HermesLiveService.start(ctx) else HermesLiveService.stop(ctx)
         }
     }
 
@@ -639,19 +784,30 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         es?.cancel()
+        sessionEs?.cancel()
+        listEs?.cancel()
         termEs?.cancel()
+        reconnect?.cancel()
         stopSpeak()
         runCatching { recorder?.release() }
+        // Do not cancel the agent run — leaving the Activity must not fail the turn.
     }
 
-    private fun onSse(ev: String, data: String) {
+    private fun onSse(ev: String, data: String, eventId: String) {
         val e = ev.lowercase()
+        if (eventId.isNotBlank()) {
+            afterEventId = eventId
+            eventId.toLongOrNull()?.let { afterSeq = maxOf(afterSeq, it) }
+        } else {
+            afterSeq += 1
+        }
         viewModelScope.launch(Dispatchers.Main) {
             val obj = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull()
             when {
                 e == "token" || e == "delta" -> {
                     val piece = obj?.prim("text") ?: obj?.prim("delta") ?: ""
                     live.value += piece
+                    busy.value = true
                 }
                 e == "todo_state" -> {
                     val arr = obj?.get("todos")
@@ -675,10 +831,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     val name = obj?.prim("name", "tool", "function") ?: "tool"
                     bubbles.add(ChatMsg("t-${System.currentTimeMillis()}", "assistant", "", name))
                 }
-                e == "done" || e.contains("complete") || e == "error" -> {
-                    if (e == "error") error.value = obj?.prim("error", "message") ?: "stream error"
-                    flushLive()
-                    busy.value = false
+                e == "done" || e.contains("complete") -> {
+                    settleTurn()
+                }
+                e == "error" -> {
+                    error.value = obj?.prim("error", "message") ?: "stream error"
+                    settleTurn()
                 }
             }
         }

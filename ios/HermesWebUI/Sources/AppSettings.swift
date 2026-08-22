@@ -5,6 +5,8 @@ import Combine
 final class AppSettings: ObservableObject {
     @AppStorage("webuiURL") var webuiURL: String = ""
     @AppStorage("dashboardURL") var dashboardURL: String = ""
+    @AppStorage("lastSid") var lastSid: String = ""
+    @AppStorage("lastStreamId") var lastStreamId: String = ""
 
     var isConfigured: Bool {
         let s = webuiURL.trimmingCharacters(in: .whitespacesAndNewlines)

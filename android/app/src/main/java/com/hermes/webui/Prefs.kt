@@ -26,5 +26,13 @@ class Prefs(ctx: Context) {
         get() = prefs.getString("dashboard_url", "") ?: ""
         set(v) { prefs.edit().putString("dashboard_url", v.trim()).apply() }
 
+    var lastSid: String
+        get() = prefs.getString("last_sid", "") ?: ""
+        set(v) { prefs.edit().putString("last_sid", v).apply() }
+
+    var lastStreamId: String
+        get() = prefs.getString("last_stream_id", "") ?: ""
+        set(v) { prefs.edit().putString("last_stream_id", v).apply() }
+
     val isConfigured: Boolean get() = baseUrl.isNotBlank()
 }

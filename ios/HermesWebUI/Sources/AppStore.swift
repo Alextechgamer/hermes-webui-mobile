@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import AVFoundation
+import UIKit
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -47,11 +48,19 @@ final class AppStore: ObservableObject {
     @Published var listening = false
     @Published var transcribing = false
     var currentSid: String = ""
+    var streamId: String = ""
+    var afterSeq: Int64 = 0
+    var afterEventId = ""
+    var userStopped = false
     var client: APIClient?
     private var pollTask: Task<Void, Never>?
+    private var streamTask: Task<Void, Never>?
+    private var sessionTask: Task<Void, Never>?
+    private var listTask: Task<Void, Never>?
     private var termTask: Task<Void, Never>?
     private var audioPlayer: AVAudioPlayer?
     private var recorder: AVAudioRecorder?
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
 
     func attach(url: URL) {
         client = APIClient(baseURL: url)
@@ -70,6 +79,9 @@ final class AppStore: ObservableObject {
                 await loadSessions()
                 models = await c.models()
                 startPoll()
+                listenForSessionList()
+                let last = UserDefaults.standard.string(forKey: "lastSid") ?? ""
+                if !last.isEmpty { await openSid(last, keepPanel: true) }
             }
         } catch {
             self.error = error.localizedDescription
@@ -139,8 +151,10 @@ final class AppStore: ObservableObject {
     func openSid(_ id: String, keepPanel: Bool = false) async {
         guard let c = client else { return }
         currentSid = id
+        UserDefaults.standard.set(id, forKey: "lastSid")
         liveText = ""
         if !keepPanel { panel = .chat }
+        listenForSession()
         do {
             let load = try await c.loadSession(id: id)
             apply(load)
@@ -158,8 +172,145 @@ final class AppStore: ObservableObject {
         truncated = load.truncated
         messages = load.messages
         todos = load.todos
-        if !load.activeStreamId.isEmpty && !busy {
-            Task { await streamTokens(id: load.activeStreamId) }
+        let liveId = load.activeStreamId
+        if !liveId.isEmpty {
+            if streamId != liveId || streamTask == nil {
+                Task { await attachStream(liveId, replay: streamId == liveId && afterSeq > 0) }
+            }
+        } else if busy && !userStopped {
+            settleTurn()
+        }
+    }
+
+    func send(_ text: String) async {
+        guard let c = client else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if currentSid.isEmpty { await newChat() }
+        messages.append(ChatMessage(role: "user", content: trimmed))
+        busy = true
+        liveText = ""
+        userStopped = false
+        afterSeq = 0
+        afterEventId = ""
+        panel = .chat
+        holdBackground()
+        do {
+            let start = try await c.startChat(sessionId: currentSid, message: trimmed, model: selectedModel.isEmpty ? nil : selectedModel)
+            if let stream = start.stream_id, !stream.isEmpty {
+                await attachStream(stream, replay: false)
+            } else {
+                await recoverLive()
+            }
+        } catch {
+            self.error = error.localizedDescription
+            busy = false
+            endBackground()
+        }
+    }
+
+    func stop() async {
+        guard let c = client else { return }
+        userStopped = true
+        streamTask?.cancel()
+        await c.cancelChat(sessionId: currentSid)
+        settleTurn()
+    }
+
+    private func attachStream(_ id: String, replay: Bool) async {
+        guard let c = client, !id.isEmpty else { return }
+        streamId = id
+        UserDefaults.standard.set(id, forKey: "lastStreamId")
+        busy = true
+        holdBackground()
+        streamTask?.cancel()
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            let ok = await c.streamTokens(id: id, replay: replay, afterSeq: self.afterSeq, afterEventId: self.afterEventId) { ev, data, eid in
+                Task { @MainActor in self.handleSSE(event: ev, data: data, eventId: eid) }
+            }
+            await MainActor.run {
+                if self.userStopped {
+                    self.settleTurn()
+                } else {
+                    Task { await self.reconnectOrRecover(id) }
+                }
+            }
+            _ = ok
+        }
+    }
+
+    private func reconnectOrRecover(_ id: String) async {
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard !userStopped else { return }
+        let still = await client?.streamStatus(id: id) ?? false
+        if still {
+            await attachStream(id, replay: true)
+        } else {
+            await recoverLive()
+        }
+    }
+
+    func recoverLive() async {
+        let id = currentSid.isEmpty ? (UserDefaults.standard.string(forKey: "lastSid") ?? "") : currentSid
+        guard !id.isEmpty, let c = client else { return }
+        do {
+            let load = try await c.loadSession(id: id)
+            if currentSid.isEmpty {
+                currentSid = id
+                listenForSession()
+            }
+            apply(load)
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func onForeground() {
+        guard loggedIn else { return }
+        Task {
+            await recoverLive()
+            listenForSession()
+            listenForSessionList()
+        }
+    }
+
+    func onBackground() {
+        holdBackground()
+    }
+
+    private func settleTurn() {
+        flushLive()
+        busy = false
+        streamId = ""
+        UserDefaults.standard.set("", forKey: "lastStreamId")
+        endBackground()
+        Task { await loadSessions() }
+    }
+
+    private func handleSSE(event: String, data: String, eventId: String) {
+        if !eventId.isEmpty {
+            afterEventId = eventId
+            if let n = Int64(eventId) { afterSeq = max(afterSeq, n) }
+        } else {
+            afterSeq += 1
+        }
+        guard let raw = data.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return }
+        let ev = event.lowercased()
+        if ev == "token" || ev == "delta" {
+            liveText += (obj["text"] as? String) ?? (obj["delta"] as? String) ?? ""
+            busy = true
+        } else if ev == "todo_state", let arr = obj["todos"] as? [[String: Any]] {
+            todos = arr.map { t in
+                TodoItem(id: t["id"] as? String, content: t["content"] as? String, text: t["text"] as? String, title: t["title"] as? String, status: t["status"] as? String)
+            }
+        } else if ev.contains("tool") {
+            let name = (obj["name"] as? String) ?? (obj["tool"] as? String) ?? "tool"
+            messages.append(ChatMessage(role: "assistant", content: "", tool_name: name))
+        } else if ev == "done" || ev.contains("complete") {
+            settleTurn()
+        } else if ev == "error" {
+            error = (obj["error"] as? String) ?? (obj["message"] as? String)
+            settleTurn()
         }
     }
 
@@ -167,10 +318,12 @@ final class AppStore: ObservableObject {
         guard let c = client else { return }
         do {
             currentSid = try await c.newSession()
+            UserDefaults.standard.set(currentSid, forKey: "lastSid")
             messages = []; liveText = ""; todos = []
             title = "New conversation"
             truncated = false
             panel = .chat
+            listenForSession()
             await loadSessions()
         } catch { self.error = error.localizedDescription }
     }
@@ -182,60 +335,6 @@ final class AppStore: ObservableObject {
             currentSid = ""; messages = []; liveText = ""; title = "Hermes"
         }
         await loadSessions()
-    }
-
-    func send(_ text: String) async {
-        guard let c = client else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        if currentSid.isEmpty { await newChat() }
-        messages.append(ChatMessage(role: "user", content: trimmed))
-        busy = true
-        liveText = ""
-        panel = .chat
-        do {
-            let start = try await c.startChat(sessionId: currentSid, message: trimmed, model: selectedModel.isEmpty ? nil : selectedModel)
-            if let stream = start.stream_id, !stream.isEmpty { await streamTokens(id: stream) }
-        } catch { self.error = error.localizedDescription }
-        busy = false
-        await loadSessions()
-    }
-
-    func stop() async {
-        guard let c = client else { return }
-        await c.cancelChat(sessionId: currentSid)
-        flushLive()
-        busy = false
-    }
-
-    private func streamTokens(id: String) async {
-        guard let c = client else { return }
-        busy = true
-        await c.streamTokens(id: id) { ev, data in
-            Task { @MainActor in self.handleSSE(event: ev, data: data) }
-        }
-        flushLive()
-        busy = false
-    }
-
-    private func handleSSE(event: String, data: String) {
-        guard let raw = data.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { return }
-        let ev = event.lowercased()
-        if ev == "token" || ev == "delta" {
-            liveText += (obj["text"] as? String) ?? (obj["delta"] as? String) ?? ""
-        } else if ev == "todo_state", let arr = obj["todos"] as? [[String: Any]] {
-            todos = arr.map { t in
-                TodoItem(id: t["id"] as? String, content: t["content"] as? String, text: t["text"] as? String, title: t["title"] as? String, status: t["status"] as? String)
-            }
-        } else if ev.contains("tool") {
-            let name = (obj["name"] as? String) ?? (obj["tool"] as? String) ?? "tool"
-            messages.append(ChatMessage(role: "assistant", content: "", tool_name: name))
-        } else if ev == "done" || ev.contains("complete") || ev == "error" {
-            if ev == "error" { error = (obj["error"] as? String) ?? (obj["message"] as? String) }
-            flushLive()
-            busy = false
-        }
     }
 
     private func flushLive() {
@@ -451,15 +550,77 @@ final class AppStore: ObservableObject {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard let self, let c = self.client, self.loggedIn, !self.currentSid.isEmpty else { continue }
                 let a = await c.approval(sid: self.currentSid)
                 let q = await c.clarify(sid: self.currentSid)
+                let st = await c.sessionStatus(sid: self.currentSid)
                 await MainActor.run {
                     self.approval = a
                     self.clarify = q
                 }
+                if !st.0.isEmpty && (self.streamId != st.0 || self.streamTask == nil) && !self.userStopped {
+                    await self.attachStream(st.0, replay: self.streamId == st.0)
+                }
+                if st.1 > self.messages.count && !self.busy {
+                    await self.recoverLive()
+                }
             }
+        }
+    }
+
+    private func listenForSession() {
+        guard let c = client, !currentSid.isEmpty else { return }
+        sessionTask?.cancel()
+        let sid = currentSid
+        sessionTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await c.streamSession(sid: sid, knownCount: self?.messages.count ?? 0) { ev, data in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        let e = ev.lowercased()
+                        let obj = (data.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+                        if e == "server_turn_started" {
+                            let id = (obj["stream_id"] as? String) ?? (obj["streamId"] as? String) ?? ""
+                            if !id.isEmpty && !self.userStopped {
+                                await self.attachStream(id, replay: self.streamId == id)
+                            }
+                        } else if e == "session_updated" || e.contains("complete") {
+                            await self.recoverLive()
+                        }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+        }
+    }
+
+    private func listenForSessionList() {
+        guard let c = client else { return }
+        listTask?.cancel()
+        listTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await c.streamSessionList { ev, _ in
+                    if ev.contains("session") || ev.isEmpty || ev == "sessions_changed" {
+                        Task { await self?.loadSessions() }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private func holdBackground() {
+        if bgTask != .invalid { return }
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "hermes-live") { [weak self] in
+            self?.endBackground()
+        }
+    }
+
+    private func endBackground() {
+        if bgTask != .invalid {
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
         }
     }
 }

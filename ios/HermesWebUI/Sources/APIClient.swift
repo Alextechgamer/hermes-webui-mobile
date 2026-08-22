@@ -159,13 +159,61 @@ final class APIClient {
         _ = try? await postJSON("/api/chat/cancel", body: ["session_id": sessionId])
     }
 
-    func streamTokens(id: String, onEvent: @escaping (String, String) -> Void) async {
+    func streamTokens(id: String, replay: Bool = false, afterSeq: Int64 = 0, afterEventId: String = "", onEvent: @escaping (String, String, String) -> Void) async -> Bool {
         let u = baseURL.appendingPathComponent("api/chat/stream")
         var comp = URLComponents(url: u, resolvingAgainstBaseURL: false)!
-        comp.queryItems = [URLQueryItem(name: "stream_id", value: id)]
-        guard let url = comp.url else { return }
+        var items = [URLQueryItem(name: "stream_id", value: id)]
+        if replay { items.append(URLQueryItem(name: "replay", value: "1")) }
+        if afterSeq > 0 { items.append(URLQueryItem(name: "after_seq", value: String(afterSeq))) }
+        if !afterEventId.isEmpty { items.append(URLQueryItem(name: "after_event_id", value: afterEventId)) }
+        comp.queryItems = items
+        guard let url = comp.url else { return false }
         var req = URLRequest(url: url)
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = 60 * 60
+        do {
+            let (bytes, _) = try await session.bytes(for: req)
+            var event = ""
+            var eid = ""
+            for try await line in bytes.lines {
+                if line.hasPrefix("id:") {
+                    eid = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("event:") {
+                    event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("data:") {
+                    onEvent(event, String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces), eid)
+                } else if line.isEmpty {
+                    event = ""; eid = ""
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func streamStatus(id: String) async -> Bool {
+        ((try? await dict("/api/chat/stream/status?stream_id=\(q(id))"))?["active"] as? Bool) ?? false
+    }
+
+    func sessionStatus(sid: String) async -> (String, Int) {
+        let o = (try? await dict("/api/session/status?session_id=\(q(sid))")) ?? [:]
+        return ((o["active_stream_id"] as? String) ?? "", (o["message_count"] as? Int) ?? 0)
+    }
+
+    func streamSession(sid: String, knownCount: Int, onEvent: @escaping (String, String) -> Void) async {
+        await streamPath("/api/session/stream?session_id=\(q(sid))&known_count=\(knownCount)", onEvent: onEvent)
+    }
+
+    func streamSessionList(onEvent: @escaping (String, String) -> Void) async {
+        await streamPath("/api/sessions/events", onEvent: onEvent)
+    }
+
+    private func streamPath(_ path: String, onEvent: @escaping (String, String) -> Void) async {
+        guard let url = URL(string: path, relativeTo: baseURL.appendingPathComponent("/"))?.absoluteURL else { return }
+        var req = URLRequest(url: url)
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        req.timeoutInterval = 60 * 60
         do {
             let (bytes, _) = try await session.bytes(for: req)
             var event = ""

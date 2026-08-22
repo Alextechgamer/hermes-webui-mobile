@@ -19,7 +19,13 @@ Auth is cookie + CSRF. No bearer token.
   - `_messages_truncated` / `todo_state` may be present
 - `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`)
 - `GET /api/chat/stream?stream_id=` SSE event `token` `{text}`
-- `POST /api/chat/cancel` `{session_id}`
+  - reconnect with `replay=1&after_seq=&after_event_id=` — do **not** treat socket close as cancel
+- `GET /api/chat/stream/status?stream_id=` → `{active}`
+- `GET /api/session/status?session_id=` → `{active_stream_id, message_count, agent_running}`
+- `GET /api/session/stream?session_id=&known_count=` — live `server_turn_started` / `session_updated`
+- `GET /api/sessions/events` — sidebar `sessions_changed`
+- `POST /api/chat/cancel` `{session_id}` — **only** when the user taps Stop
+- Leaving the app must not POST cancel. Android holds a dataSync foreground service while a turn is live. iOS uses a background task + reconnect on resume.
 - `POST /api/session/delete` `{session_id}`
 - `POST /api/session/update` `{session_id, model?}`
 - Never auto-send a test message.

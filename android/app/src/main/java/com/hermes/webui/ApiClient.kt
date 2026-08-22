@@ -152,17 +152,67 @@ class ApiClient(base: String) {
         return el.str("stream_id")
     }
 
-    fun stream(streamId: String, onEvent: (String, String) -> Unit, onClosed: () -> Unit): EventSource {
+    fun stream(
+        streamId: String,
+        replay: Boolean = false,
+        afterSeq: Long = 0,
+        afterEventId: String = "",
+        onEvent: (String, String, String) -> Unit,
+        onClosed: () -> Unit,
+    ): EventSource {
+        val qs = buildString {
+            append("/api/chat/stream?stream_id=").append(enc(streamId))
+            if (replay) append("&replay=1")
+            if (afterSeq > 0) append("&after_seq=").append(afterSeq)
+            if (afterEventId.isNotBlank()) append("&after_event_id=").append(enc(afterEventId))
+        }
         val r = Request.Builder()
-            .url("$root/api/chat/stream?stream_id=$streamId")
+            .url("$root$qs")
             .header("Accept", "text/event-stream")
             .build()
         return EventSources.createFactory(http).newEventSource(r, object : EventSourceListener() {
-            override fun onEvent(es: EventSource, id: String?, type: String?, data: String) {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                onEvent(type ?: "", data, id.orEmpty())
+            }
+            override fun onClosed(eventSource: EventSource) { onClosed() }
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: okhttp3.Response?) { onClosed() }
+        })
+    }
+
+    fun streamStatus(streamId: String): Boolean {
+        return runCatching { parse("/api/chat/stream/status?stream_id=${enc(streamId)}").asObj().bool("active") }.getOrDefault(false)
+    }
+
+    fun sessionStatus(sid: String): Pair<String, Int> {
+        val o = parse("/api/session/status?session_id=${enc(sid)}").asObj()
+        return o.str("active_stream_id") to o.int("message_count")
+    }
+
+    fun streamSession(sid: String, knownCount: Int, onEvent: (String, String) -> Unit, onClosed: () -> Unit): EventSource {
+        val r = Request.Builder()
+            .url("$root/api/session/stream?session_id=${enc(sid)}&known_count=$knownCount")
+            .header("Accept", "text/event-stream")
+            .build()
+        return EventSources.createFactory(http).newEventSource(r, object : EventSourceListener() {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                 onEvent(type ?: "", data)
             }
-            override fun onClosed(es: EventSource) { onClosed() }
-            override fun onFailure(es: EventSource, t: Throwable?, resp: okhttp3.Response?) { onClosed() }
+            override fun onClosed(eventSource: EventSource) { onClosed() }
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: okhttp3.Response?) { onClosed() }
+        })
+    }
+
+    fun streamSessionList(onEvent: (String, String) -> Unit, onClosed: () -> Unit): EventSource {
+        val r = Request.Builder()
+            .url("$root/api/sessions/events")
+            .header("Accept", "text/event-stream")
+            .build()
+        return EventSources.createFactory(http).newEventSource(r, object : EventSourceListener() {
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+                onEvent(type ?: "", data)
+            }
+            override fun onClosed(eventSource: EventSource) { onClosed() }
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: okhttp3.Response?) { onClosed() }
         })
     }
 

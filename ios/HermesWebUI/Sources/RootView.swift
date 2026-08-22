@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var settings: AppSettings
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store = AppStore()
     @State private var showMenu = false
     @State private var showConnect = false
@@ -30,6 +31,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $showMenu) { MenuSheet(store: store, show: $showMenu) }
         .sheet(isPresented: $showConnect) { ConnectSheet(settings: settings, store: store) }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { store.onForeground() }
+            else if phase == .background { store.onBackground() }
+        }
     }
 
     private var connect: some View {
