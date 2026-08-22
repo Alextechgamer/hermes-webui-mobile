@@ -1,7 +1,7 @@
 # iOS — native Hermes WebUI (Mac + Xcode)
 
 SwiftUI client for hermes-webui. **No WebView.** Same REST+SSE contract as
-Android (`docs/API.md`). Marketing version **0.9.1**.
+Android (`docs/API.md`). Marketing version **0.9.2**.
 
 ```bash
 git pull

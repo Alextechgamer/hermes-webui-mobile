@@ -8,7 +8,8 @@ struct RootView: View {
     @State private var showConnect = false
     @State private var draft = ""
     @State private var password = ""
-
+    @State private var urlDraft = ""
+    @State private var dashDraft = ""
 
     var body: some View {
         ZStack {
@@ -16,14 +17,12 @@ struct RootView: View {
             VStack(spacing: 0) {
                 if store.ready { topbar }
                 Group {
-                    if !settings.isConfigured {
-                        connect
-                    } else if store.needsLogin {
+                    if store.needsLogin {
                         login
                     } else if store.ready {
                         panelHost
                     } else {
-                        ProgressView().tint(Palette.accent)
+                        connect
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -31,11 +30,14 @@ struct RootView: View {
             if showMenu { drawerOverlay }
         }
         .preferredColorScheme(.dark)
-        .task(id: settings.webuiURL) {
-            if let url = settings.normalizedURL {
-                store.attach(url: url)
-                await store.bootstrap()
-            }
+        .task {
+            if urlDraft.isEmpty { urlDraft = settings.webuiURL }
+            if dashDraft.isEmpty { dashDraft = settings.dashboardURL }
+            guard !store.ready, !store.needsLogin else { return }
+            let saved = settings.webuiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard saved.contains(".") || saved.contains("://"), let url = settings.normalizedURL else { return }
+            store.attach(url: url)
+            await store.bootstrap()
         }
         .sheet(isPresented: $showConnect) { ConnectSheet(settings: settings, store: store) }
         .onChange(of: scenePhase) { phase in
@@ -44,54 +46,78 @@ struct RootView: View {
         }
         .onAppear {
             if password.isEmpty { password = settings.password }
+            if urlDraft.isEmpty { urlDraft = settings.webuiURL }
+            if dashDraft.isEmpty { dashDraft = settings.dashboardURL }
         }
     }
 
     private var connect: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("HERMES")
-                .font(.system(size: 13, weight: .bold))
-                .tracking(2)
-                .foregroundColor(Palette.accent)
-            Text("WebUI")
-                .font(.system(size: 28, weight: .semibold))
-                .tracking(-0.4)
-                .foregroundColor(Palette.text)
-            Text("Native client — same dark-gold chrome as the desktop WebUI. Not a WebView.")
-                .font(.system(size: 14))
-                .foregroundColor(Palette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField("", text: $settings.webuiURL, prompt: Text("http://host:8787").foregroundColor(Palette.muted))
-                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
-                .padding(14)
-                .background(Palette.surface)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
-                .cornerRadius(12)
-                .foregroundColor(Palette.text)
-            TextField("", text: $settings.dashboardURL, prompt: Text("Hermes Console http://host:8790 (optional)").foregroundColor(Palette.muted))
-                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
-                .padding(14)
-                .background(Palette.surface)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
-                .cornerRadius(12)
-                .foregroundColor(Palette.text)
-            Button {
-                if let url = settings.normalizedURL {
-                    store.attach(url: url)
-                    Task { await store.bootstrap() }
-                }
-            } label: {
-                Text("Continue")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Palette.bg)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("HERMES")
+                    .font(.system(size: 13, weight: .bold))
+                    .tracking(2)
+                    .foregroundColor(Palette.accent)
+                Text("WebUI")
+                    .font(.system(size: 28, weight: .semibold))
+                    .tracking(-0.4)
+                    .foregroundColor(Palette.text)
+                Text("Native client — same dark-gold chrome as the desktop WebUI. Not a WebView.")
+                    .font(.system(size: 14))
+                    .foregroundColor(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("", text: $urlDraft, prompt: Text("http://host:8787").foregroundColor(Palette.muted))
+                    .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                    .submitLabel(.continue)
+                    .padding(14)
+                    .background(Palette.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
+                    .cornerRadius(12)
+                    .foregroundColor(Palette.text)
+                    .onSubmit { connectNow() }
+                TextField("", text: $dashDraft, prompt: Text("Hermes Console http://host:8790 (optional)").foregroundColor(Palette.muted))
+                    .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                    .padding(14)
+                    .background(Palette.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
+                    .cornerRadius(12)
+                    .foregroundColor(Palette.text)
+                Button(action: connectNow) {
+                    HStack {
+                        if store.bootstrapping {
+                            ProgressView().tint(Palette.bg)
+                        }
+                        Text(store.bootstrapping ? "Connecting…" : "Continue")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(Palette.bg)
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(14)
-                    .background(Palette.accent)
+                    .background(
+                        (store.bootstrapping || urlDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            ? Palette.accent.opacity(0.45) : Palette.accent
+                    )
                     .cornerRadius(12)
+                }
+                .disabled(store.bootstrapping || urlDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if let e = store.error {
+                    Text(e).font(.system(size: 12)).foregroundColor(Palette.danger)
+                }
             }
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private func connectNow() {
+        let urlText = urlDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !urlText.isEmpty else { return }
+        settings.webuiURL = urlText
+        settings.dashboardURL = dashDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = settings.normalizedURL else { return }
+        store.attach(url: url)
+        Task { await store.bootstrap() }
     }
 
     private var login: some View {
@@ -372,14 +398,16 @@ struct ConnectSheet: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
+    @State private var urlDraft = ""
+    @State private var dashDraft = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Connection") {
-                    TextField("WebUI URL", text: $settings.webuiURL)
+                    TextField("WebUI URL", text: $urlDraft)
                         .textInputAutocapitalization(.never).keyboardType(.URL)
-                    TextField("Hermes Console URL (optional)", text: $settings.dashboardURL)
+                    TextField("Hermes Console URL (optional)", text: $dashDraft)
                         .textInputAutocapitalization(.never).keyboardType(.URL)
                         .textContentType(.none)
                 }
@@ -391,6 +419,8 @@ struct ConnectSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Save") {
+                        settings.webuiURL = urlDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                        settings.dashboardURL = dashDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                         if let url = settings.normalizedURL {
                             store.attach(url: url)
                             Task { await store.bootstrap() }
@@ -399,6 +429,10 @@ struct ConnectSheet: View {
                     }
                     .foregroundColor(Palette.accent)
                 }
+            }
+            .onAppear {
+                urlDraft = settings.webuiURL
+                dashDraft = settings.dashboardURL
             }
         }
         .preferredColorScheme(.dark)

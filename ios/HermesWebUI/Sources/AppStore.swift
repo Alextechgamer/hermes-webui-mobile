@@ -14,6 +14,7 @@ final class AppStore: ObservableObject {
     @Published var error: String?
     @Published var busy = false
     @Published var ready = false
+    @Published var bootstrapping = false
     @Published var needsLogin = false
     @Published var loggedIn = false
     @Published var authEnabled = false
@@ -81,6 +82,8 @@ final class AppStore: ObservableObject {
     func bootstrap() async {
         guard let c = client else { return }
         error = nil
+        bootstrapping = true
+        defer { bootstrapping = false }
         do {
             let st = try await c.authStatus()
             authEnabled = st.auth_enabled

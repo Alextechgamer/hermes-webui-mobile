@@ -40,7 +40,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Enter `http://<host>:8787` then your WebUI password if auth is on.
 Optional Hermes Console URL: `http://<host>:8790`.
 
-Current builds: Android **0.9.0** · iOS **0.9.1**.
+Current builds: Android **0.9.0** · iOS **0.9.2**.
 
 Chat is live SSE (same as desktop). Leaving the app does **not** cancel the
 turn. Android keeps a “Hermes is working” foreground service while a reply
