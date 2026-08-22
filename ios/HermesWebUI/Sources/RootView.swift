@@ -35,6 +35,7 @@ struct RootView: View {
             if phase == .active { store.onForeground() }
             else if phase == .background { store.onBackground() }
         }
+        .onAppear { if password.isEmpty { password = settings.password } }
     }
 
     private var connect: some View {
@@ -139,7 +140,7 @@ struct MenuSheet: View {
         NavigationStack {
             List {
                 Section("Hermes WebUI") {
-                    ForEach(Panel.allCases) { p in
+                    ForEach(Panel.allCases.filter(\.inRail)) { p in
                         Button(p.label) {
                             if p != .chat { show = false }
                             Task { await store.go(p) }

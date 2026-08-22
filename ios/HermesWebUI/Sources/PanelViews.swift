@@ -358,19 +358,38 @@ struct DashboardPane: View {
 struct SettingsPane: View {
     @ObservedObject var store: AppStore
     @ObservedObject var settings: AppSettings
+    @State private var section = "Conversation"
+    private let sections = ["Conversation", "Appearance", "Preferences", "Providers", "Plugins", "Extensions", "System", "Help"]
+
     var body: some View {
         List {
+            Section("Settings") {
+                Picker("Section", selection: $section) {
+                    ForEach(sections, id: \.self) { Text($0).tag($0) }
+                }
+            }
             Section("Connection") {
                 TextField("WebUI URL", text: $settings.webuiURL)
                     .textInputAutocapitalization(.never).keyboardType(.URL)
+                TextField("Hermes Console URL", text: $settings.dashboardURL)
+                    .textInputAutocapitalization(.never).keyboardType(.URL)
             }
-            Section("WebUI settings") {
-                Text("Same keys as Control Center. Secrets are hidden.")
-                    .font(.caption).foregroundColor(Palette.muted)
-                if !store.models.isEmpty {
-                    Text("Models: " + store.models.prefix(8).joined(separator: ", ")).font(.caption).foregroundColor(Palette.muted)
+            if section == "Help" {
+                Section("Help") {
+                    Text("Native client of hermes-webui. Not a WebView.")
+                    Text("github.com/NousResearch/hermes-webui")
+                    Text("github.com/Alextechgamer/hermes-webui-mobile")
                 }
-                ForEach(store.settingsItems) { item in
+            } else if section == "System" {
+                Section("System") {
+                    Button("Open Hermes Console") { Task { await store.go(.dashboard) } }
+                        .foregroundColor(Palette.accent)
+                    Button("Open Terminal") { Task { await store.go(.terminal) } }
+                        .foregroundColor(Palette.accent)
+                }
+            }
+            Section(section) {
+                ForEach(filtered) { item in
                     if item.type == "bool" {
                         Toggle(item.key, isOn: Binding(
                             get: { (store.settingEdits[item.key] ?? item.value) == "true" },
@@ -399,5 +418,19 @@ struct SettingsPane: View {
         }
         .scrollContentBackground(.hidden).background(Palette.bg)
         .task { await store.loadPanel() }
+    }
+
+    private var filtered: [SettingItem] {
+        store.settingsItems.filter { item in
+            let k = item.key.lowercased()
+            switch section {
+            case "Appearance": return ["theme", "skin", "font", "accent", "density", "rtl"].contains { k.contains($0) }
+            case "Providers": return ["provider", "api_key"].contains { k.contains($0) }
+            case "System": return ["password", "auth", "port", "update", "max_token", "check_for"].contains { k.contains($0) }
+            case "Conversation": return ["sidebar", "session", "tool", "think", "mermaid", "message_mode", "stream", "compact", "pin"].contains { k.contains($0) }
+            case "Preferences": return true
+            default: return false
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("dashboardURL") var dashboardURL: String = ""
     @AppStorage("lastSid") var lastSid: String = ""
     @AppStorage("lastStreamId") var lastStreamId: String = ""
+    @AppStorage("webuiPassword") var password: String = ""
 
     var isConfigured: Bool {
         let s = webuiURL.trimmingCharacters(in: .whitespacesAndNewlines)

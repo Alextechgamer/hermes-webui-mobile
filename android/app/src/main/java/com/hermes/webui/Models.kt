@@ -1,6 +1,6 @@
 package com.hermes.webui
 
-enum class Panel(val label: String) {
+enum class Panel(val label: String, val inRail: Boolean = true) {
     Chat("Chat"),
     Tasks("Tasks"),
     Kanban("Kanban"),
@@ -10,12 +10,51 @@ enum class Panel(val label: String) {
     Profiles("Profiles"),
     Todos("Todos"),
     Insights("Insights"),
-    Files("Files"),
-    Terminal("Terminal"),
     Logs("Logs"),
-    Dashboard("Dashboard"),
     Settings("Settings"),
+    Files("Files", inRail = false),
+    Terminal("Terminal", inRail = false),
+    Dashboard("Dashboard", inRail = false),
 }
+
+enum class SettingsSection(val label: String) {
+    Conversation("Conversation"),
+    Appearance("Appearance"),
+    Preferences("Preferences"),
+    Providers("Providers"),
+    Plugins("Plugins"),
+    Extensions("Extensions"),
+    System("System"),
+    Help("Help"),
+}
+
+data class PendingAttach(
+    val name: String,
+    val path: String,
+    val mime: String = "",
+    val isImage: Boolean = false,
+)
+
+data class ProviderRow(
+    val id: String,
+    val displayName: String,
+    val hasKey: Boolean,
+    val configurable: Boolean,
+    val keySource: String,
+)
+
+data class PluginRow(
+    val name: String,
+    val description: String,
+    val enabled: Boolean = true,
+)
+
+data class ExtensionRow(
+    val id: String,
+    val name: String,
+    val enabled: Boolean = false,
+    val description: String = "",
+)
 
 data class AuthStatus(
     val authEnabled: Boolean = false,

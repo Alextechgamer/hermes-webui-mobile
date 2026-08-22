@@ -186,8 +186,14 @@ struct SettingItem: Identifiable {
 }
 
 enum Panel: String, CaseIterable, Identifiable {
-    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, files, terminal, insights, logs, dashboard, settings
+    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, insights, logs, settings, files, terminal, dashboard
     var id: String { rawValue }
+    var inRail: Bool {
+        switch self {
+        case .files, .terminal, .dashboard: return false
+        default: return true
+        }
+    }
     var label: String {
         switch self {
         case .chat: return "Chat"

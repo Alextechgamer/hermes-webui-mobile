@@ -1,6 +1,8 @@
 package com.hermes.webui
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -17,6 +19,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.sse.EventSource
+import java.util.ArrayDeque
 
 class AppVm(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
@@ -70,6 +73,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val voiceAvailable = mutableStateOf(false)
     val prompts = mutableStateListOf<SavedPrompt>()
     val showModelPicker = mutableStateOf(false)
+    val pendingAttach = mutableStateListOf<PendingAttach>()
+    val settingsSection = mutableStateOf(SettingsSection.Conversation)
+    val providers = mutableStateListOf<ProviderRow>()
+    val plugins = mutableStateListOf<PluginRow>()
+    val extensions = mutableStateListOf<ExtensionRow>()
     var sid = ""
         private set
     private var streamId = ""
@@ -85,12 +93,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var player: android.media.MediaPlayer? = null
     private var recorder: android.media.MediaRecorder? = null
     private var recFile: java.io.File? = null
+    private val outbound = ArrayDeque<Pair<String, List<String>>>()
 
     fun reconnect() {
         val u = prefs.baseUrl
         configured.value = u.isNotBlank()
         if (u.isBlank()) return
-        api = ApiClient(if (u.contains("://")) u else "http://$u")
+        api = ApiClient(if (u.contains("://")) u else "http://$u", prefs)
         viewModelScope.launch { bootstrap() }
     }
 
@@ -102,19 +111,32 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         try {
             val st = withContext(Dispatchers.IO) { c.authStatus() }
             if (st.authEnabled && !st.loggedIn) {
-                needsLogin.value = true
-                ready.value = false
+                val saved = prefs.password
+                if (saved.isNotBlank()) {
+                    runCatching { withContext(Dispatchers.IO) { c.login(saved) } }
+                        .onFailure {
+                            needsLogin.value = true
+                            ready.value = false
+                            return
+                        }
+                    needsLogin.value = false
+                    ready.value = true
+                } else {
+                    needsLogin.value = true
+                    ready.value = false
+                    return
+                }
             } else {
                 needsLogin.value = false
                 ready.value = true
-                withContext(Dispatchers.IO) { runCatching { c.refreshCsrf() } }
-                refreshSessions()
-                loadModels()
-                startPoll()
-                attachListStream()
-                if (prefs.lastSid.isNotBlank()) open(prefs.lastSid, keepPanel = true)
-                voiceAvailable.value = withContext(Dispatchers.IO) { runCatching { c.transcribeAvailable() }.getOrDefault(false) }
             }
+            withContext(Dispatchers.IO) { runCatching { c.refreshCsrf() } }
+            refreshSessions()
+            loadModels()
+            startPoll()
+            attachListStream()
+            if (prefs.lastSid.isNotBlank()) open(prefs.lastSid, keepPanel = true)
+            voiceAvailable.value = withContext(Dispatchers.IO) { runCatching { c.transcribeAvailable() }.getOrDefault(false) }
         } catch (e: Exception) {
             error.value = e.message
         }
@@ -126,6 +148,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             error.value = null
             try {
                 withContext(Dispatchers.IO) { c.login(password) }
+                prefs.password = password
                 needsLogin.value = false
                 ready.value = true
                 refreshSessions()
@@ -227,9 +250,23 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         settingsItems.clear(); settingsItems.addAll(items)
                         settingEdits.value = emptyMap()
                         loadModels()
+                        val prov = withContext(Dispatchers.IO) { runCatching { c.providers() }.getOrDefault(emptyList()) }
+                        providers.clear(); providers.addAll(prov)
+                        val plug = withContext(Dispatchers.IO) { runCatching { c.plugins() }.getOrDefault(emptyList()) }
+                        plugins.clear(); plugins.addAll(plug)
+                        val ext = withContext(Dispatchers.IO) { runCatching { c.extensions() }.getOrDefault(emptyList()) }
+                        extensions.clear(); extensions.addAll(ext)
                     }
                 }
             } catch (e: AuthException) {
+                val saved = prefs.password
+                if (saved.isNotBlank()) {
+                    val ok = withContext(Dispatchers.IO) { runCatching { c.login(saved); true }.getOrDefault(false) }
+                    if (ok) {
+                        loadPanel(p)
+                        return@launch
+                    }
+                }
                 needsLogin.value = true
                 ready.value = false
             } catch (e: Exception) {
@@ -336,14 +373,26 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     fun send(text: String) {
+        val t = text.trim()
+        val files = pendingAttach.map { it.path }
+        if (t.isEmpty() && files.isEmpty()) return
+        pendingAttach.clear()
+        val shown = t.ifBlank { files.joinToString { it.substringAfterLast('/') } }
+        bubbles.add(ChatMsg("u-${System.currentTimeMillis()}", "user", shown))
+        if (busy.value) {
+            outbound.addLast(t.ifBlank { "(attachments)" } to files)
+            return
+        }
+        startTurn(t.ifBlank { "See attached files." }, files)
+    }
+
+    private fun startTurn(text: String, attachments: List<String>) {
         val c = api ?: return
-        val t = text.trim(); if (t.isEmpty()) return
         viewModelScope.launch {
             if (sid.isBlank()) {
                 try { sid = withContext(Dispatchers.IO) { c.newSession() } }
                 catch (e: Exception) { error.value = e.message; return@launch }
             }
-            bubbles.add(ChatMsg("u-${System.currentTimeMillis()}", "user", t))
             busy.value = true
             live.value = ""
             userStopped = false
@@ -353,16 +402,43 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             keepAlive(true)
             try {
                 val newStream = withContext(Dispatchers.IO) {
-                    c.startChat(sid, t, selectedModel.value.ifBlank { null })
+                    c.startChat(sid, text, selectedModel.value.ifBlank { null }, attachments)
                 }
-                if (newStream.isNotEmpty()) attachStream(newStream, replay = false) else {
-                    // Start may return empty if already running — attach via status.
-                    recoverLive()
-                }
+                if (newStream.isNotEmpty()) attachStream(newStream, replay = false) else recoverLive()
             } catch (e: Exception) {
                 error.value = e.message
                 busy.value = false
                 keepAlive(false)
+            }
+        }
+    }
+
+    fun dropAttach(item: PendingAttach) {
+        pendingAttach.removeAll { it.path == item.path }
+    }
+
+    fun attachUris(ctx: Context, uris: List<Uri>) {
+        val c = api ?: return
+        viewModelScope.launch {
+            if (sid.isBlank()) {
+                try { sid = withContext(Dispatchers.IO) { c.newSession() } }
+                catch (e: Exception) { error.value = e.message; return@launch }
+            }
+            for (uri in uris) {
+                try {
+                    val uploaded = withContext(Dispatchers.IO) {
+                        val name = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "file" } ?: "file"
+                        val mime = ctx.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val dest = java.io.File(ctx.cacheDir, "up-${System.currentTimeMillis()}-$name")
+                        ctx.contentResolver.openInputStream(uri)?.use { input ->
+                            dest.outputStream().use { input.copyTo(it) }
+                        } ?: throw RuntimeException("Could not read $name")
+                        c.upload(sid, dest, mime)
+                    }
+                    pendingAttach.add(uploaded)
+                } catch (e: Exception) {
+                    error.value = e.message
+                }
             }
         }
     }
@@ -429,6 +505,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         prefs.lastStreamId = ""
         keepAlive(false)
         refreshSessions()
+        val next = outbound.pollFirst()
+        if (next != null) startTurn(next.first, next.second)
     }
 
     fun cronAction(id: String, action: String) {
@@ -511,6 +589,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 }
             }
             withContext(Dispatchers.IO) { runCatching { c.saveSettings(typed) } }
+            loadPanel(Panel.Settings)
+        }
+    }
+
+    fun setProviderKey(id: String, key: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.setProviderKey(id, key) } }
             loadPanel(Panel.Settings)
         }
     }

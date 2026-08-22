@@ -70,7 +70,7 @@ fun HermesApp(vm: AppVm = viewModel()) {
         var showConnect by remember { mutableStateOf(false) }
         var urlDraft by remember { mutableStateOf(vm.prefs.baseUrl) }
         var dashDraft by remember { mutableStateOf(vm.prefs.dashboardUrl) }
-        var password by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf(vm.prefs.password) }
         val stayInApp = showConnect || drawer.isOpen || vm.canPopBack()
         BackHandler(enabled = stayInApp) {
             when {
@@ -198,7 +198,7 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Text("MENU", color = Wui.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, modifier = Modifier.padding(16.dp, 10.dp, 16.dp, 4.dp))
-            Panel.entries.forEach { p ->
+            Panel.entries.filter { it.inRail }.forEach { p ->
                 val sel = vm.panel.value == p
                 Row(
                     Modifier

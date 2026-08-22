@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
@@ -72,7 +74,7 @@ fun ChatPane(vm: AppVm) {
         val last = vm.bubbles.size + if (vm.live.value.isNotEmpty()) 1 else 0
         if (last > 0) runCatching { list.animateScrollToItem(last) }
     }
-    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg).imePadding()) {
         ErrLine(vm)
         vm.approval.value?.let { ApprovalBanner(it, vm::approve) }
         vm.clarify.value?.let { ClarifyBanner(it, vm::answerClarify) }
@@ -280,6 +282,9 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
     var showPrompts by remember { mutableStateOf(false) }
     var showProfiles by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
+    val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) vm.attachUris(ctx, uris)
+    }
     val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.startListen() else vm.error.value = "Microphone permission denied"
     }
@@ -306,6 +311,20 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
             ModelPicker(vm.models, vm.selectedModel.value) { m ->
                 vm.selectedModel.value = m
                 showModels = false
+            }
+        }
+        if (vm.pendingAttach.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                vm.pendingAttach.forEach { a ->
+                    Row(
+                        Modifier.clip(WuiShapeSm).background(Wui.Surface).border(1.dp, Wui.Border, WuiShapeSm).padding(8.dp, 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(a.name, color = Wui.Text, fontSize = 12.sp, maxLines = 1)
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Outlined.Close, "Remove", tint = Wui.Muted, modifier = Modifier.size(14.dp).clickable { vm.dropAttach(a) })
+                    }
+                }
             }
         }
         Column(
@@ -337,7 +356,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                IconBtnSmall(Icons.Outlined.AttachFile, "Files") { vm.go(Panel.Files) }
+                IconBtnSmall(Icons.Outlined.AttachFile, "Attach from phone") { pickFiles.launch(arrayOf("*/*")) }
                 IconBtnSmall(Icons.Outlined.BookmarkBorder, "Saved prompts") { showPrompts = !showPrompts }
                 IconBtnSmall(
                     if (vm.listening.value) Icons.Outlined.Stop else Icons.Outlined.Mic,
@@ -356,20 +375,18 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 FooterChip(Icons.Outlined.Folder, workspace) { vm.go(Panel.Files) }
                 if (model.isNotBlank()) FooterChip(Icons.Outlined.Memory, model.take(22)) { showModels = !showModels }
                 Spacer(Modifier.width(8.dp))
-                val canSend = draft.isNotBlank() && !vm.busy.value
+                val canSend = draft.isNotBlank() || vm.pendingAttach.isNotEmpty()
                 Box(
                     Modifier
                         .size(34.dp)
                         .clip(CircleShape)
-                        .background(if (vm.busy.value || canSend) Wui.Accent else Wui.Border)
-                        .clickable(enabled = vm.busy.value || canSend) {
-                            if (vm.busy.value) vm.stop() else onSend()
-                        },
+                        .background(if (canSend) Wui.Accent else Wui.Border)
+                        .clickable(enabled = canSend) { onSend() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        if (vm.busy.value) Icons.Outlined.Stop else Icons.Outlined.ArrowUpward,
-                        if (vm.busy.value) "Stop" else "Send",
+                        Icons.Outlined.ArrowUpward,
+                        if (vm.busy.value) "Queue message" else "Send",
                         tint = Wui.Bg,
                         modifier = Modifier.size(16.dp),
                     )

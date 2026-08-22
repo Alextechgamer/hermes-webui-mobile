@@ -1,5 +1,7 @@
 package com.hermes.webui
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -30,17 +32,57 @@ import java.util.concurrent.TimeUnit
 
 class AuthException : RuntimeException("auth required")
 
-class ApiClient(base: String) {
+@Serializable
+private data class CookieRec(
+    val name: String,
+    val value: String,
+    val domain: String,
+    val path: String,
+    val expiresAt: Long,
+    val secure: Boolean,
+    val httpOnly: Boolean,
+    val hostOnly: Boolean,
+)
+
+private class PersistentCookieJar(private val prefs: Prefs) : CookieJar {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val store = mutableListOf<Cookie>()
+
+    init {
+        runCatching {
+            json.decodeFromString<List<CookieRec>>(prefs.cookiesJson).forEach { rec ->
+                val b = Cookie.Builder().name(rec.name).value(rec.value).path(rec.path.ifBlank { "/" }).expiresAt(rec.expiresAt)
+                if (rec.secure) b.secure()
+                if (rec.httpOnly) b.httpOnly()
+                if (rec.hostOnly) b.hostOnlyDomain(rec.domain.ifBlank { "localhost" })
+                else b.domain(rec.domain.trimStart('.').ifBlank { "localhost" })
+                store += b.build()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        store.removeAll { c -> cookies.any { it.name == c.name && it.domain == c.domain } }
+        store.addAll(cookies)
+        persist()
+    }
+
+    @Synchronized
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = store.toList()
+
+    private fun persist() {
+        val recs = store.map {
+            CookieRec(it.name, it.value, it.domain, it.path, it.expiresAt, it.secure, it.httpOnly, it.hostOnly)
+        }
+        prefs.cookiesJson = json.encodeToString(recs)
+    }
+}
+
+class ApiClient(base: String, prefs: Prefs) {
     private val root = base.trim().trimEnd('/')
     private var csrf = ""
-    private val jar = object : CookieJar {
-        private val store = mutableListOf<Cookie>()
-        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            store.removeAll { c -> cookies.any { it.name == c.name } }
-            store.addAll(cookies)
-        }
-        override fun loadForRequest(url: HttpUrl) = store.toList()
-    }
+    private val jar = PersistentCookieJar(prefs)
     private val http = OkHttpClient.Builder()
         .cookieJar(jar)
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -145,11 +187,72 @@ class ApiClient(base: String) {
         postRaw("/api/session/delete", """{"session_id":${q(sid)}}""")
     }
 
-    fun startChat(sid: String, message: String, model: String?): String {
-        val extra = if (!model.isNullOrBlank()) ""","model":${q(model)}""" else ""
-        val body = """{"session_id":${q(sid)},"message":${q(message)}$extra}"""
-        val el = json.parseToJsonElement(exec(req("POST", "/api/chat/start", body))).asObj()
+    fun startChat(sid: String, message: String, model: String?, attachments: List<String> = emptyList()): String {
+        val parts = mutableListOf("\"session_id\":${q(sid)}", "\"message\":${q(message)}")
+        if (!model.isNullOrBlank()) parts += "\"model\":${q(model)}"
+        if (attachments.isNotEmpty()) parts += "\"attachments\":[" + attachments.joinToString(",") { q(it) } + "]"
+        val el = json.parseToJsonElement(exec(req("POST", "/api/chat/start", "{" + parts.joinToString(",") + "}"))).asObj()
         return el.str("stream_id")
+    }
+
+    fun upload(sid: String, file: java.io.File, mime: String = "application/octet-stream"): PendingAttach {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("session_id", sid)
+            .addFormDataPart("file", file.name, file.asRequestBody(mime.toMediaType()))
+            .build()
+        val b = Request.Builder().url("$root/api/upload")
+        if (csrf.isNotEmpty()) b.header("X-Hermes-CSRF-Token", csrf)
+        val o = json.parseToJsonElement(exec(b.post(body).build())).asObj()
+        if (o.str("error").isNotBlank()) throw RuntimeException(o.str("error"))
+        return PendingAttach(
+            name = o.str("filename").ifBlank { file.name },
+            path = o.str("path"),
+            mime = o.str("mime").ifBlank { mime },
+            isImage = o.bool("is_image") || mime.startsWith("image/"),
+        )
+    }
+
+    fun providers(): List<ProviderRow> {
+        val o = parse("/api/providers").asObj()
+        val arr = o.arr("providers") ?: o.arr("items") ?: JsonArray(emptyList())
+        return arr.mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val id = p.str("id", "provider", "name")
+            if (id.isBlank()) return@mapNotNull null
+            ProviderRow(
+                id = id,
+                displayName = p.str("display_name", "label", "name").ifBlank { id },
+                hasKey = p.bool("has_key") || p.bool("configured") || p.bool("logged_in"),
+                configurable = p.bool("configurable", true),
+                keySource = p.str("key_source", "source"),
+            )
+        }
+    }
+
+    fun setProviderKey(id: String, key: String) {
+        postRaw("/api/providers", "{\"provider\":${q(id)},\"api_key\":${q(key)}}")
+    }
+
+    fun plugins(): List<PluginRow> {
+        val o = parse("/api/plugins").asObj()
+        val arr = o.arr("plugins") ?: JsonArray(emptyList())
+        return arr.mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val name = p.str("name", "id", "title")
+            if (name.isBlank()) return@mapNotNull null
+            PluginRow(name, p.str("description", "summary", "hooks").take(240), p.bool("enabled", true))
+        }
+    }
+
+    fun extensions(): List<ExtensionRow> {
+        val o = parse("/api/extensions/status").asObj()
+        val arr = o.arr("extensions") ?: o.arr("installed") ?: o.arr("items") ?: JsonArray(emptyList())
+        return arr.mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val id = p.str("id", "name")
+            if (id.isBlank()) return@mapNotNull null
+            ExtensionRow(id, p.str("name", "title").ifBlank { id }, p.bool("enabled") || p.bool("active"), p.str("description", "summary").take(240))
+        }
     }
 
     fun stream(

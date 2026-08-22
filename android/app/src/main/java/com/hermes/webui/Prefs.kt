@@ -38,5 +38,14 @@ class Prefs(ctx: Context) {
         get() = prefs.getBoolean("chats_expanded", false)
         set(v) { prefs.edit().putBoolean("chats_expanded", v).apply() }
 
+    /** Encrypted. Used only to re-login when the session cookie is gone. */
+    var password: String
+        get() = prefs.getString("password", "") ?: ""
+        set(v) { prefs.edit().putString("password", v).apply() }
+
+    var cookiesJson: String
+        get() = prefs.getString("cookies_json", "[]") ?: "[]"
+        set(v) { prefs.edit().putString("cookies_json", v).apply() }
+
     val isConfigured: Boolean get() = baseUrl.isNotBlank()
 }

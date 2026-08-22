@@ -121,7 +121,7 @@ struct ChatPane: View {
                             let t = draft; draft = ""
                             Task { await store.send(t) }
                         } label: {
-                            Image(systemName: store.busy ? "stop.circle.fill" : "arrow.up.circle.fill")
+                            Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 26))
                         }
                     }

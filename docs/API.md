@@ -54,7 +54,7 @@ Auth is cookie + CSRF. No bearer token.
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
 | Dashboard | Hermes Console `GET :8790/api/usage` (derived from WebUI host, or Connection override) | — |
-| Settings | `/api/settings`, `/api/models` | `POST /api/settings` |
+| Settings | `/api/settings` grouped as Conversation / Appearance / Preferences / System; `/api/providers`; `/api/plugins`; `/api/extensions/status` | `POST /api/settings`, `POST /api/providers` `{provider,api_key}` |
 
 ## Files / terminal / voice
 

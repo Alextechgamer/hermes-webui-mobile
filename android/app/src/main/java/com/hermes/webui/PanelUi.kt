@@ -315,39 +315,7 @@ fun LogsPane(vm: AppVm) {
     }
 }
 
-@Composable
-fun SettingsPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
-        ErrLine(vm)
-        SectionLabel("WebUI settings — same keys as Control Center. Secrets are hidden.")
-        if (vm.models.isNotEmpty()) {
-            Text("Models: " + vm.models.take(8).joinToString { it.id }, color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp))
-        }
-        LazyColumn(Modifier.weight(1f)) {
-            items(vm.settingsItems, key = { it.key }) { item ->
-                val current = vm.settingEdits.value[item.key] ?: item.value
-                Column(Modifier.padding(16.dp, 8.dp)) {
-                    Text(item.key, color = Wui.Accent, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    if (item.type == "bool") {
-                        Switch(
-                            checked = current == "true",
-                            onCheckedChange = { vm.editSetting(item.key, if (it) "true" else "false") },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Wui.Bg, checkedTrackColor = Wui.Accent),
-                        )
-                    } else if (item.type != "json") {
-                        OutlinedTextField(current, { vm.editSetting(item.key, it) }, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
-                    } else {
-                        Text(item.value, color = Wui.Muted, fontSize = 12.sp)
-                    }
-                }
-                HorizontalDivider(color = Wui.Border)
-            }
-        }
-        if (vm.settingEdits.value.isNotEmpty()) {
-            TextButton(onClick = { vm.saveSettings() }, modifier = Modifier.padding(12.dp)) { Text("Save ${vm.settingEdits.value.size} changes", color = Wui.Accent) }
-        }
-    }
-}
+
 
 @Composable
 private fun Stat(label: String, value: String) {

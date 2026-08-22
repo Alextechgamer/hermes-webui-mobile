@@ -9,14 +9,11 @@ This repo has **no personal data**. First launch asks for the WebUI URL.
 ## Panels (same rail as desktop WebUI)
 
 Chat · Tasks · Kanban · Skills · Memory · Spaces · Profiles · Todos ·
-Files · Terminal · Insights · Logs · **Dashboard** · Settings
+Insights · Logs · Settings
 
-Conversations live **under Chat** in the menu (filter + session list), same
-as the desktop sidebar.
-
-**Dashboard** is Hermes Console (`GET /api/usage` on `:8790`): Live Usage,
-Monthly Burn, Real Cost vs Metered, Usage Overview, Popular Models, request
-feed. Empty Console URL derives `:8790` from the WebUI host.
+Conversations live **under Chat** as a collapsed dropdown. Paperclip
+attaches photos/files from the phone (`POST /api/upload`). Folder chip
+opens workspace Files. Hermes Console is under **Settings → System**.
 
 ## Honest leftover vs desktop
 
@@ -43,7 +40,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Enter `http://<host>:8787` then your WebUI password if auth is on.
 Optional Hermes Console URL: `http://<host>:8790`.
 
-Current debug build: **0.8.1**.
+Current debug build: **0.9.0**.
 
 Chat is live SSE (same as desktop). Leaving the app does **not** cancel the
 turn. Android keeps a “Hermes is working” foreground service while a reply

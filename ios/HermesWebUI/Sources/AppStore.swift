@@ -63,6 +63,7 @@ final class AppStore: ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private var recorder: AVAudioRecorder?
     private var bgTask: UIBackgroundTaskIdentifier = .invalid
+    private var outbound: [(String, [String])] = []
 
     func attach(url: URL) {
         client = APIClient(baseURL: url)
@@ -76,7 +77,16 @@ final class AppStore: ObservableObject {
             authEnabled = st.auth_enabled
             loggedIn = st.logged_in || !st.auth_enabled
             needsLogin = st.auth_enabled && !st.logged_in
-            if loggedIn {
+            if needsLogin, let pw = UserDefaults.standard.string(forKey: "webuiPassword"), !pw.isEmpty {
+                do {
+                    try await c.login(password: pw)
+                    needsLogin = false
+                    loggedIn = true
+                } catch {
+                    needsLogin = true
+                }
+            }
+            if loggedIn || !needsLogin {
                 try await c.refreshCSRF()
                 await loadSessions()
                 models = await c.models()
@@ -95,6 +105,7 @@ final class AppStore: ObservableObject {
         error = nil
         do {
             try await c.login(password: password)
+            UserDefaults.standard.set(password, forKey: "webuiPassword")
             needsLogin = false
             loggedIn = true
             await loadSessions()
@@ -198,11 +209,19 @@ final class AppStore: ObservableObject {
     }
 
     func send(_ text: String) async {
-        guard let c = client else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        if currentSid.isEmpty { await newChat() }
         messages.append(ChatMessage(role: "user", content: trimmed))
+        if busy {
+            outbound.append((trimmed, []))
+            return
+        }
+        await startTurn(trimmed)
+    }
+
+    private func startTurn(_ trimmed: String) async {
+        guard let c = client else { return }
+        if currentSid.isEmpty { await newChat() }
         busy = true
         liveText = ""
         userStopped = false
@@ -299,6 +318,10 @@ final class AppStore: ObservableObject {
         UserDefaults.standard.set("", forKey: "lastStreamId")
         endBackground()
         Task { await loadSessions() }
+        if !outbound.isEmpty {
+            let next = outbound.removeFirst()
+            Task { await startTurn(next.0) }
+        }
     }
 
     private func handleSSE(event: String, data: String, eventId: String) {
