@@ -48,6 +48,6 @@ export; do not invent a team id. If that file is missing, use the Organizer GUI.
 
 Do not add WebView/WKWebView as product UI. Do not bake in any hostname, IP, or password.
 
-Honest leftover vs Android 0.9: iOS paperclip still opens workspace Files, not
-the Photos/Files picker. Keyboard safe-area is handled by SwiftUI. Mid-run send
-queues the next turn. Settings sections match desktop.
+Paperclip attaches Photos/Files via `POST /api/upload` (same as Android). Folder
+chip opens workspace Files. Keyboard safe-area is handled by SwiftUI. Mid-run
+send queues the next turn. Settings sections match desktop.

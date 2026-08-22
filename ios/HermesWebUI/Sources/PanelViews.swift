@@ -47,7 +47,8 @@ struct KanbanPane: View {
                         ForEach(col.tasks) { task in
                             VStack(alignment: .leading) {
                                 Text(task.title).foregroundColor(Palette.text).font(.subheadline)
-                                if !task.assignee.isEmpty { Text(task.assignee).font(.caption).foregroundColor(Palette.muted) }
+                                let sub = [task.assignee, task.priority].filter { !$0.isEmpty }.joined(separator: " · ")
+                                if !sub.isEmpty { Text(sub).font(.caption).foregroundColor(Palette.muted) }
                             }
                             .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                             .background(Palette.bg).cornerRadius(8)
@@ -334,6 +335,22 @@ struct DashboardPane: View {
                         }
                     }
                 }
+                Text("Request feed").foregroundColor(Palette.text).bold()
+                ForEach(u.feed.prefix(40)) { r in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(r.session_short).font(.system(size: 11, design: .monospaced)).foregroundColor(Palette.muted)
+                            Text(r.source).font(.system(size: 12, weight: .semibold)).foregroundColor(Palette.text)
+                            Spacer()
+                            Text(r.est_cost > 0 ? ConsoleFmt.money(r.est_cost, digits: 4) : "NO PRICE")
+                                .font(.system(size: 11))
+                                .foregroundColor(r.est_cost > 0 ? Palette.accent : Palette.muted)
+                        }
+                        Text("\(r.model) · \(r.task) · \(ConsoleFmt.tok(r.tokens_total)) tok · cache \(r.cache_pct)% · \(ConsoleFmt.age(r.age_s))")
+                            .font(.system(size: 11)).foregroundColor(Palette.muted)
+                    }
+                    .padding(.vertical, 6)
+                }
                 Button("Refresh") { Task { await store.loadConsole() } }.foregroundColor(Palette.accent)
             }.padding(16)
         }
@@ -355,82 +372,4 @@ struct DashboardPane: View {
     }
 }
 
-struct SettingsPane: View {
-    @ObservedObject var store: AppStore
-    @ObservedObject var settings: AppSettings
-    @State private var section = "Conversation"
-    private let sections = ["Conversation", "Appearance", "Preferences", "Providers", "Plugins", "Extensions", "System", "Help"]
 
-    var body: some View {
-        List {
-            Section("Settings") {
-                Picker("Section", selection: $section) {
-                    ForEach(sections, id: \.self) { Text($0).tag($0) }
-                }
-            }
-            Section("Connection") {
-                TextField("WebUI URL", text: $settings.webuiURL)
-                    .textInputAutocapitalization(.never).keyboardType(.URL)
-                TextField("Hermes Console URL", text: $settings.dashboardURL)
-                    .textInputAutocapitalization(.never).keyboardType(.URL)
-            }
-            if section == "Help" {
-                Section("Help") {
-                    Text("Native client of hermes-webui. Not a WebView.")
-                    Text("github.com/NousResearch/hermes-webui")
-                    Text("github.com/Alextechgamer/hermes-webui-mobile")
-                }
-            } else if section == "System" {
-                Section("System") {
-                    Button("Open Hermes Console") { Task { await store.go(.dashboard) } }
-                        .foregroundColor(Palette.accent)
-                    Button("Open Terminal") { Task { await store.go(.terminal) } }
-                        .foregroundColor(Palette.accent)
-                }
-            }
-            Section(section) {
-                ForEach(filtered) { item in
-                    if item.type == "bool" {
-                        Toggle(item.key, isOn: Binding(
-                            get: { (store.settingEdits[item.key] ?? item.value) == "true" },
-                            set: { store.settingEdits[item.key] = $0 ? "true" : "false" }
-                        ))
-                    } else if item.type != "json" {
-                        VStack(alignment: .leading) {
-                            Text(item.key).font(.caption).foregroundColor(Palette.muted)
-                            TextField("", text: Binding(
-                                get: { store.settingEdits[item.key] ?? item.value },
-                                set: { store.settingEdits[item.key] = $0 }
-                            ))
-                        }
-                    } else {
-                        VStack(alignment: .leading) {
-                            Text(item.key).font(.caption).foregroundColor(Palette.muted)
-                            Text(item.value).font(.footnote).foregroundColor(Palette.text)
-                        }
-                    }
-                }
-                if !store.settingEdits.isEmpty {
-                    Button("Save \(store.settingEdits.count) changes") { Task { await store.saveSettings() } }
-                        .foregroundColor(Palette.accent)
-                }
-            }
-        }
-        .scrollContentBackground(.hidden).background(Palette.bg)
-        .task { await store.loadPanel() }
-    }
-
-    private var filtered: [SettingItem] {
-        store.settingsItems.filter { item in
-            let k = item.key.lowercased()
-            switch section {
-            case "Appearance": return ["theme", "skin", "font", "accent", "density", "rtl"].contains { k.contains($0) }
-            case "Providers": return ["provider", "api_key"].contains { k.contains($0) }
-            case "System": return ["password", "auth", "port", "update", "max_token", "check_for"].contains { k.contains($0) }
-            case "Conversation": return ["sidebar", "session", "tool", "think", "mermaid", "message_mode", "stream", "compact", "pin"].contains { k.contains($0) }
-            case "Preferences": return true
-            default: return false
-            }
-        }
-    }
-}

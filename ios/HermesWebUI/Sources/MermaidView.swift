@@ -30,8 +30,10 @@ func splitChat(_ content: String) -> [ChatSeg] {
 }
 
 struct MNode { var id: String; var label: String }
-struct MEdge { var from: String; var to: String }
+struct MEdge { var from: String; var to: String; var label: String = "" }
 struct MGraph { var dir: String; var nodes: [MNode]; var edges: [MEdge] }
+struct MSeq { var actors: [String]; var msgs: [(String, String, String)] }
+struct MPie { var slices: [(String, Float)] }
 
 func parseFlow(_ src: String) -> MGraph? {
     let lines = src.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("%%") }
@@ -62,6 +64,38 @@ func parseFlow(_ src: String) -> MGraph? {
     return MGraph(dir: dir, nodes: labels.map { MNode(id: $0.key, label: $0.value) }, edges: edges)
 }
 
+func parseSeq(_ src: String) -> MSeq? {
+    let lines = src.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    guard lines.contains(where: { $0.lowercased().hasPrefix("sequencediagram") }) else { return nil }
+    var actors: [String] = []
+    var msgs: [(String, String, String)] = []
+    let re = try? NSRegularExpression(pattern: #"([\w][\w\s.-]*?)\s*(?:->>|-->>|-->|->)\s*([\w][\w\s.-]*?)\s*:\s*(.+)"#)
+    for line in lines.dropFirst() {
+        let ns = line as NSString
+        guard let m = re?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges >= 4 else { continue }
+        let a = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+        let b = ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces)
+        if !actors.contains(a) { actors.append(a) }
+        if !actors.contains(b) { actors.append(b) }
+        msgs.append((a, b, ns.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespaces)))
+    }
+    return actors.isEmpty ? nil : MSeq(actors: actors, msgs: msgs)
+}
+
+func parsePie(_ src: String) -> MPie? {
+    let lines = src.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    guard lines.contains(where: { $0.lowercased().hasPrefix("pie") }) else { return nil }
+    var slices: [(String, Float)] = []
+    let re = try? NSRegularExpression(pattern: #""([^"]+)"\s*:\s*([0-9.]+)"#)
+    for line in lines {
+        let ns = line as NSString
+        guard let m = re?.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges >= 3 else { continue }
+        let name = ns.substring(with: m.range(at: 1))
+        if let v = Float(ns.substring(with: m.range(at: 2))) { slices.append((name, v)) }
+    }
+    return slices.isEmpty ? nil : MPie(slices: slices)
+}
+
 struct MermaidBlock: View {
     let source: String
     var body: some View {
@@ -69,6 +103,10 @@ struct MermaidBlock: View {
             Text("mermaid").font(.caption).foregroundColor(Palette.accent)
             if let g = parseFlow(source) {
                 FlowCanvas(g: g).frame(height: CGFloat(80 * max(layer(g).count, 1) + 20))
+            } else if let s = parseSeq(source) {
+                SeqCanvas(s: s).frame(height: CGFloat(80 + 36 * s.msgs.count))
+            } else if let p = parsePie(source) {
+                PieCanvas(p: p).frame(height: 220)
             }
             ScrollView(.horizontal) {
                 Text(source).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.muted)
@@ -124,6 +162,63 @@ struct FlowCanvas: View {
                 var p = Path()
                 p.move(to: a); p.addLine(to: b)
                 ctx.stroke(p, with: .color(Palette.accent), lineWidth: 2)
+            }
+        }
+    }
+}
+
+struct SeqCanvas: View {
+    let s: MSeq
+    var body: some View {
+        Canvas { ctx, size in
+            let n = max(s.actors.count, 1)
+            let gap = size.width / CGFloat(n)
+            for (i, name) in s.actors.enumerated() {
+                let x = (CGFloat(i) + 0.5) * gap
+                var line = Path()
+                line.move(to: CGPoint(x: x, y: 40))
+                line.addLine(to: CGPoint(x: x, y: size.height - 8))
+                ctx.stroke(line, with: .color(Palette.border), lineWidth: 2)
+                ctx.draw(Text(name.prefix(16)).font(.caption2).foregroundColor(Palette.text), at: CGPoint(x: x, y: 20))
+            }
+            for (i, msg) in s.msgs.enumerated() {
+                let y = 70 + CGFloat(i) * 36
+                let i1 = s.actors.firstIndex(of: msg.0) ?? 0
+                let i2 = s.actors.firstIndex(of: msg.1) ?? 0
+                let x1 = (CGFloat(i1) + 0.5) * gap
+                let x2 = (CGFloat(i2) + 0.5) * gap
+                var p = Path()
+                p.move(to: CGPoint(x: x1, y: y))
+                p.addLine(to: CGPoint(x: x2, y: y))
+                ctx.stroke(p, with: .color(Palette.accent), lineWidth: 2)
+                ctx.draw(Text(msg.2.prefix(28)).font(.caption2).foregroundColor(Palette.text), at: CGPoint(x: (x1 + x2) / 2, y: y - 10))
+            }
+        }
+    }
+}
+
+struct PieCanvas: View {
+    let p: MPie
+    var body: some View {
+        let total = max(p.slices.reduce(0) { $0 + $1.1 }, 0.001)
+        VStack(alignment: .leading, spacing: 6) {
+            Canvas { ctx, size in
+                let r = min(size.width, size.height) / 2 - 8
+                var start = Angle.degrees(-90)
+                for (i, slice) in p.slices.enumerated() {
+                    let sweep = Angle.degrees(Double(360 * (slice.1 / total)))
+                    var path = Path()
+                    path.move(to: CGPoint(x: size.width / 2, y: size.height / 2))
+                    path.addArc(center: CGPoint(x: size.width / 2, y: size.height / 2), radius: r, startAngle: start, endAngle: start + sweep, clockwise: false)
+                    path.closeSubpath()
+                    let hue = Double((i * 50) % 360) / 360
+                    ctx.fill(path, with: .color(Color(hue: hue, saturation: 0.55, brightness: 0.9)))
+                    start += sweep
+                }
+            }
+            .frame(height: 160)
+            ForEach(Array(p.slices.enumerated()), id: \.offset) { _, s in
+                Text("\(s.0) · \(s.1)").font(.caption).foregroundColor(Palette.muted)
             }
         }
     }

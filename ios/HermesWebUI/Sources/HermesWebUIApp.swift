@@ -9,6 +9,7 @@ struct HermesWebUIApp: App {
             RootView()
                 .environmentObject(settings)
                 .preferredColorScheme(.dark)
+                .background(Palette.bg.ignoresSafeArea())
         }
     }
 }

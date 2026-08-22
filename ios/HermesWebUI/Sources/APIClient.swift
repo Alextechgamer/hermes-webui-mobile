@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// Talks to hermes-webui (port 8787 typically). Cookies persist on this session.
 final class APIClient {
@@ -67,9 +68,9 @@ final class APIClient {
         let (data, _) = try await session.data(from: baseURL)
         guard let html = String(data: data, encoding: .utf8) else { return }
         let patterns = [
-            "csrf_token\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"",
-            "__CSRF_TOKEN_JSON__\\\\s*=\\\\s*\\\"([^\\\"]+)\\\"",
-            "name=\\\"csrf-token\\\" content=\\\"([^\\\"]+)\\\"",
+            "csrf_token\"\\s*:\\s*\"([^\"]+)\"",
+            "__CSRF_TOKEN_JSON__\\s*=\\s*\"([^\"]+)\"",
+            "name=\"csrf-token\" content=\"([^\"]+)\"",
         ]
         for p in patterns {
             if let r = try? NSRegularExpression(pattern: p),
@@ -104,23 +105,13 @@ final class APIClient {
         let obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         let sess = obj["session"] as? [String: Any] ?? obj
         let rawMsgs = (sess["messages"] as? [[String: Any]]) ?? (obj["messages"] as? [[String: Any]]) ?? []
-        let msgs: [ChatMessage] = rawMsgs.compactMap { m in
-            var c = ChatMessage()
-            c.role = m["role"] as? String ?? ""
-            c.content = m["content"] as? String ?? ""
-            c.tool_name = m["tool_name"] as? String ?? m["name"] as? String
-            if let n = m["id"] as? Int64 { c.id = n }
-            else if let n = m["id"] as? Int { c.id = Int64(n) }
-            return c
-        }
+        let msgs = rawMsgs.flatMap { parseChatRows($0) }
         let todoObj = (sess["todo_state"] as? [String: Any]) ?? (obj["todo_state"] as? [String: Any])
-        let todos = ((todoObj?["todos"] as? [[String: Any]]) ?? []).map { t -> TodoItem in
+        let todos = ((todoObj?["todos"] as? [[String: Any]]) ?? []).enumerated().map { i, t in
             TodoItem(
-                id: t["id"] as? String,
-                content: t["content"] as? String,
-                text: t["text"] as? String,
-                title: t["title"] as? String,
-                status: t["status"] as? String
+                id: (t["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "\(i)",
+                content: first(t, "content", "text", "title") ?? "",
+                status: (t["status"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "pending"
             )
         }
         return SessionLoad(
@@ -131,6 +122,44 @@ final class APIClient {
             truncated: (sess["_messages_truncated"] as? Bool) ?? (obj["_messages_truncated"] as? Bool) ?? false,
             activeStreamId: (sess["active_stream_id"] as? String) ?? (obj["active_stream_id"] as? String) ?? ""
         )
+    }
+
+    private func parseChatRows(_ m: [String: Any]) -> [ChatMessage] {
+        let role = (m["role"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "assistant"
+        let content = first(m, "content", "text") ?? ""
+        let tool = first(m, "tool_name", "name", "tool") ?? ""
+        let baseId: String
+        if let n = m["id"] as? Int64 { baseId = "\(n)" }
+        else if let n = m["id"] as? Int { baseId = "\(n)" }
+        else if let s = m["id"] as? String, !s.isEmpty { baseId = s }
+        else { baseId = "\(role)-\(content.hashValue)" }
+        var out: [ChatMessage] = []
+        if let calls = m["tool_calls"] as? [[String: Any]] {
+            for (i, call) in calls.enumerated() {
+                let fn = call["function"] as? [String: Any]
+                let name = first(call, "name", "tool") ?? first(fn ?? [:], "name") ?? "tool"
+                let args = first(call, "arguments") ?? first(fn ?? [:], "arguments") ?? first(call, "args", "input") ?? ""
+                let preview = first(call, "preview", "snippet", "result") ?? String(args.prefix(180))
+                out.append(ChatMessage(id: "\(baseId)-tc-\(i)", role: "tool", content: args, tool: name, preview: preview))
+            }
+        }
+        switch role {
+        case "thinking", "reasoning":
+            if !content.isEmpty { out.append(ChatMessage(id: baseId, role: "thinking", content: content)) }
+        case "tool":
+            out.append(ChatMessage(id: baseId, role: "tool", content: content, tool: tool.isEmpty ? "tool" : tool, preview: String(content.prefix(240))))
+        case "user":
+            out.append(ChatMessage(id: baseId, role: "user", content: content))
+        case "system":
+            if !content.isEmpty { out.append(ChatMessage(id: baseId, role: "system", content: content)) }
+        default:
+            if !content.isEmpty {
+                out.append(ChatMessage(id: baseId, role: "assistant", content: content))
+            } else if out.isEmpty && !tool.isEmpty {
+                out.append(ChatMessage(id: baseId, role: "tool", content: "", tool: tool))
+            }
+        }
+        return out
     }
 
     func newSession() async throws -> String {
@@ -149,10 +178,96 @@ final class APIClient {
         _ = try? await postJSON("/api/session/delete", body: ["session_id": id])
     }
 
-    func startChat(sessionId: String, message: String, model: String?) async throws -> ChatStart {
+    func startChat(sessionId: String, message: String, model: String?, attachments: [String] = []) async throws -> ChatStart {
         var body: [String: Any] = ["session_id": sessionId, "message": message]
         if let model, !model.isEmpty { body["model"] = model }
+        if !attachments.isEmpty { body["attachments"] = attachments }
         return try JSONDecoder().decode(ChatStart.self, from: try await postJSON("/api/chat/start", body: body))
+    }
+
+    func upload(sid: String, fileURL: URL, filename: String, mime: String) async throws -> PendingAttach {
+        var req = URLRequest(url: url("/api/upload"))
+        req.httpMethod = "POST"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if !csrf.isEmpty { req.setValue(csrf, forHTTPHeaderField: "X-Hermes-CSRF-Token") }
+        var data = Data()
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"session_id\"\r\n\r\n".data(using: .utf8)!)
+        data.append("\(sid)\r\n".data(using: .utf8)!)
+        let safeName = filename.replacingOccurrences(of: "\"", with: "_")
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\n".data(using: .utf8)!)
+        data.append("Content-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
+        data.append(try Data(contentsOf: fileURL))
+        data.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = data
+        let (resp, http) = try await session.data(for: req)
+        guard let r = http as? HTTPURLResponse, (200..<300).contains(r.statusCode) else { throw URLError(.badServerResponse) }
+        let obj = (try JSONSerialization.jsonObject(with: resp) as? [String: Any]) ?? [:]
+        if let err = obj["error"] as? String, !err.isEmpty { throw URLError(.cannotDecodeContentData) }
+        let path = str(obj, "path")
+        return PendingAttach(
+            name: first(obj, "filename") ?? filename,
+            path: path,
+            mime: first(obj, "mime") ?? mime,
+            isImage: bool(obj, "is_image", mime.hasPrefix("image/"))
+        )
+    }
+
+    func providers() async throws -> [ProviderRow] {
+        let o = try await dict("/api/providers")
+        let arr = o["providers"] as? [[String: Any]] ?? o["items"] as? [[String: Any]] ?? []
+        return arr.compactMap { p in
+            let id = first(p, "id", "provider", "name") ?? ""
+            guard !id.isEmpty else { return nil }
+            return ProviderRow(
+                id: id,
+                displayName: first(p, "display_name", "label", "name") ?? id,
+                hasKey: bool(p, "has_key", false) || bool(p, "configured", false) || bool(p, "logged_in", false),
+                configurable: bool(p, "configurable", true),
+                keySource: first(p, "key_source", "source") ?? ""
+            )
+        }
+    }
+
+    func setProviderKey(id: String, key: String) async {
+        _ = try? await postJSON("/api/providers", body: ["provider": id, "api_key": key])
+    }
+
+    func plugins() async throws -> [PluginRow] {
+        let o = try await dict("/api/plugins")
+        return (o["plugins"] as? [[String: Any]] ?? []).compactMap { p in
+            let name = first(p, "name", "id", "title") ?? ""
+            guard !name.isEmpty else { return nil }
+            let desc = String((first(p, "description", "summary", "hooks") ?? "").prefix(240))
+            return PluginRow(name: name, description: desc, enabled: bool(p, "enabled", true))
+        }
+    }
+
+    func extensions() async throws -> [ExtensionRow] {
+        let o = try await dict("/api/extensions/status")
+        let arr = o["extensions"] as? [[String: Any]] ?? o["installed"] as? [[String: Any]] ?? o["items"] as? [[String: Any]] ?? []
+        return arr.compactMap { p in
+            let id = first(p, "id", "name") ?? ""
+            guard !id.isEmpty else { return nil }
+            return ExtensionRow(
+                id: id,
+                name: first(p, "name", "title") ?? id,
+                enabled: bool(p, "enabled", false) || bool(p, "active", false),
+                description: String((first(p, "description", "summary") ?? "").prefix(240))
+            )
+        }
+    }
+
+    func prompts() async throws -> [SavedPrompt] {
+        let o = try await dict("/api/prompts")
+        return (o["prompts"] as? [[String: Any]] ?? []).compactMap { p in
+            let text = first(p, "text", "content", "prompt") ?? ""
+            guard !text.isEmpty else { return nil }
+            let id = first(p, "id") ?? "\(text.hashValue)"
+            return SavedPrompt(id: id, label: first(p, "label", "title") ?? String(text.prefix(48)), text: text)
+        }
     }
 
     func cancelChat(sessionId: String) async {
@@ -240,7 +355,8 @@ final class APIClient {
         return Approval(
             approvalId: str(p, "approval_id", "id"),
             tool: first(p, "tool", "name", "function", "title") ?? "tool",
-            detail: String((first(p, "description", "command", "detail", "preview") ?? "").prefix(400))
+            detail: String((first(p, "description", "command", "detail", "preview") ?? "").prefix(400)),
+            count: int(obj, "pending_count")
         )
     }
 
@@ -300,7 +416,8 @@ final class APIClient {
                     id: str(t, "id", "task_id"),
                     title: first(t, "title", "name", "id") ?? "task",
                     status: first(t, "status") ?? name,
-                    assignee: str(t, "assignee")
+                    assignee: str(t, "assignee"),
+                    priority: stringify(t["priority"] ?? "")
                 )
             }
             return KanbanColumn(name: name, tasks: tasks)
@@ -414,33 +531,30 @@ final class APIClient {
         return try JSONDecoder().decode(ConsoleUsage.self, from: data)
     }
 
-    func models() async -> [String] {
+    func models() async -> (String, [ModelOption]) {
         guard let data = try? await getData("/api/models"),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-        var names = [String]()
-        var seen = Set<String>()
-        func add(_ id: String) {
-            let t = id.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty || !seen.insert(t).inserted { return }
-            names.append(t)
-        }
-        func addItem(_ any: Any) {
-            if let s = any as? String { add(s); return }
-            if let d = any as? [String: Any] {
-                if let id = d["id"] as? String { add(id) }
-                else if let id = d["model"] as? String { add(id) }
-            }
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return ("", []) }
+        let defaultModel = first(root, "default_model", "model") ?? ""
+        var out: [String: ModelOption] = [:]
+        func add(provider: String, item: Any) {
+            guard let d = item as? [String: Any] else { return }
+            let id = first(d, "id", "model") ?? first(d, "name") ?? ""
+            guard !id.isEmpty else { return }
+            let label = first(d, "label", "name", "display") ?? id
+            let prov = provider.isEmpty ? (id.split(separator: "/").first.map(String.init) ?? "") : provider
+            if out[id] == nil { out[id] = ModelOption(id: id, label: label, provider: prov) }
         }
         if let groups = root["groups"] as? [[String: Any]] {
             for g in groups {
-                (g["models"] as? [Any])?.forEach(addItem)
-                (g["extra_models"] as? [Any])?.forEach(addItem)
+                let provider = first(g, "provider", "provider_id", "id", "name") ?? ""
+                (g["models"] as? [Any])?.forEach { add(provider: provider, item: $0) }
+                (g["extra_models"] as? [Any])?.forEach { add(provider: provider, item: $0) }
             }
         }
-        (root["models"] as? [Any])?.forEach(addItem)
-        (root["extra_models"] as? [Any])?.forEach(addItem)
-        if names.isEmpty, let def = root["default_model"] as? String { add(def) }
-        return names
+        let active = first(root, "active_provider") ?? ""
+        (root["models"] as? [Any])?.forEach { add(provider: active, item: $0) }
+        (root["extra_models"] as? [Any])?.forEach { add(provider: "extra", item: $0) }
+        return (defaultModel, Array(out.values))
     }
 
     func settings() async throws -> [SettingItem] {
@@ -584,16 +698,13 @@ final class APIClient {
         if let s = v as? String { return s }
         return String(describing: v)
     }
-    private func fmtSec(_ v: Any?) -> String {
-        let n: Double
-        if let d = v as? Double { n = d }
-        else if let i = v as? Int { n = Double(i) }
-        else { return "—" }
-        let s = Int(n)
-        return s >= 3600 ? "\(s/3600)h \((s%3600)/60)m" : "\(s/60)m \(s%60)s"
-    }
     private func secretKey(_ k: String) -> Bool {
         let s = k.lowercased()
         return ["password", "secret", "token", "api_key", "apikey", "csrf", "cookie"].contains { s.contains($0) }
     }
+}
+
+func mimeType(for url: URL) -> String {
+    if let t = UTType(filenameExtension: url.pathExtension), let m = t.preferredMIMEType { return m }
+    return "application/octet-stream"
 }

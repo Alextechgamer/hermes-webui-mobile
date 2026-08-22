@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import AVFoundation
 import UIKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -12,12 +13,13 @@ final class AppStore: ObservableObject {
     @Published var title: String = "Hermes"
     @Published var error: String?
     @Published var busy = false
+    @Published var ready = false
     @Published var needsLogin = false
     @Published var loggedIn = false
     @Published var authEnabled = false
     @Published var panel: Panel = .chat
     @Published var truncated = false
-    @Published var models: [String] = []
+    @Published var models: [ModelOption] = []
     @Published var selectedModel = ""
     @Published var jobs: [CronJob] = []
     @Published var columns: [KanbanColumn] = []
@@ -36,6 +38,7 @@ final class AppStore: ObservableObject {
     @Published var consoleError: String?
     @Published var settingsItems: [SettingItem] = []
     @Published var settingEdits: [String: String] = [:]
+    @Published var settingsSection: SettingsSection = .conversation
     @Published var approval: Approval?
     @Published var clarify: Clarify?
     @Published var jobOutput = ""
@@ -49,6 +52,12 @@ final class AppStore: ObservableObject {
     @Published var speakReplies = false
     @Published var listening = false
     @Published var transcribing = false
+    @Published var voiceAvailable = false
+    @Published var pendingAttach: [PendingAttach] = []
+    @Published var prompts: [SavedPrompt] = []
+    @Published var providers: [ProviderRow] = []
+    @Published var plugins: [PluginRow] = []
+    @Published var extensions: [ExtensionRow] = []
     var currentSid: String = ""
     var streamId: String = ""
     var afterSeq: Int64 = 0
@@ -84,16 +93,22 @@ final class AppStore: ObservableObject {
                     loggedIn = true
                 } catch {
                     needsLogin = true
+                    ready = false
+                    return
                 }
             }
             if loggedIn || !needsLogin {
+                ready = true
                 try await c.refreshCSRF()
                 await loadSessions()
-                models = await c.models()
+                await loadModels()
                 startPoll()
                 listenForSessionList()
                 let last = UserDefaults.standard.string(forKey: "lastSid") ?? ""
                 if !last.isEmpty { await openSid(last, keepPanel: true) }
+                voiceAvailable = await c.transcribeAvailable()
+            } else {
+                ready = false
             }
         } catch {
             self.error = error.localizedDescription
@@ -108,8 +123,9 @@ final class AppStore: ObservableObject {
             UserDefaults.standard.set(password, forKey: "webuiPassword")
             needsLogin = false
             loggedIn = true
+            ready = true
             await loadSessions()
-            models = await c.models()
+            await loadModels()
             startPoll()
         } catch {
             self.error = "Login failed"
@@ -119,6 +135,19 @@ final class AppStore: ObservableObject {
     func loadSessions() async {
         guard let c = client else { return }
         do { sessions = try await c.sessions() } catch { self.error = error.localizedDescription }
+    }
+
+    func loadModels() async {
+        guard let c = client else { return }
+        let r = await c.models()
+        models = r.1
+        if selectedModel.isEmpty, !r.0.isEmpty { selectedModel = r.0 }
+        prompts = (try? await c.prompts()) ?? []
+        if let pr = try? await c.profiles() {
+            activeProfile = pr.0
+            profiles = pr.1
+        }
+        spaces = (try? await c.spaces()) ?? []
     }
 
     func go(_ p: Panel) async {
@@ -165,7 +194,10 @@ final class AppStore: ObservableObject {
             case .settings:
                 settingsItems = try await c.settings()
                 settingEdits = [:]
-                models = await c.models()
+                await loadModels()
+                providers = (try? await c.providers()) ?? []
+                plugins = (try? await c.plugins()) ?? []
+                extensions = (try? await c.extensions()) ?? []
             }
         } catch {
             self.error = error.localizedDescription
@@ -196,7 +228,7 @@ final class AppStore: ObservableObject {
         if !load.title.isEmpty { title = load.title }
         if !load.model.isEmpty && selectedModel.isEmpty { selectedModel = load.model }
         truncated = load.truncated
-        messages = load.messages
+        messages = load.messages.filter { ["user", "assistant", "tool", "thinking", "system"].contains($0.role) }
         todos = load.todos
         let liveId = load.activeStreamId
         if !liveId.isEmpty {
@@ -210,16 +242,20 @@ final class AppStore: ObservableObject {
 
     func send(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        messages.append(ChatMessage(role: "user", content: trimmed))
+        let files = pendingAttach.map(\.path)
+        pendingAttach.removeAll()
+        if trimmed.isEmpty && files.isEmpty { return }
+        let shown = trimmed.isEmpty ? files.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") : trimmed
+        messages.append(ChatMessage(id: "u-\(Int(Date().timeIntervalSince1970 * 1000))", role: "user", content: shown))
+        let payload = trimmed.isEmpty ? "See attached files." : trimmed
         if busy {
-            outbound.append((trimmed, []))
+            outbound.append((payload, files))
             return
         }
-        await startTurn(trimmed)
+        await startTurn(payload, files)
     }
 
-    private func startTurn(_ trimmed: String) async {
+    private func startTurn(_ trimmed: String, _ attachments: [String]) async {
         guard let c = client else { return }
         if currentSid.isEmpty { await newChat() }
         busy = true
@@ -230,7 +266,12 @@ final class AppStore: ObservableObject {
         panel = .chat
         holdBackground()
         do {
-            let start = try await c.startChat(sessionId: currentSid, message: trimmed, model: selectedModel.isEmpty ? nil : selectedModel)
+            let start = try await c.startChat(
+                sessionId: currentSid,
+                message: trimmed,
+                model: selectedModel.isEmpty ? nil : selectedModel,
+                attachments: attachments
+            )
             if let stream = start.stream_id, !stream.isEmpty {
                 await attachStream(stream, replay: false)
             } else {
@@ -240,6 +281,42 @@ final class AppStore: ObservableObject {
             self.error = error.localizedDescription
             busy = false
             endBackground()
+        }
+    }
+
+    func dropAttach(_ item: PendingAttach) {
+        pendingAttach.removeAll { $0.path == item.path }
+    }
+
+    func attachFiles(_ urls: [URL]) async {
+        guard let c = client else { return }
+        if !(await ensureSid()) { return }
+        for url in urls {
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let name = url.lastPathComponent.isEmpty ? "file" : url.lastPathComponent
+                let dest = FileManager.default.temporaryDirectory.appendingPathComponent("up-\(UUID().uuidString)-\(name)")
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.copyItem(at: url, to: dest)
+                let uploaded = try await c.upload(sid: currentSid, fileURL: dest, filename: name, mime: mimeType(for: url))
+                pendingAttach.append(uploaded)
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    func attachData(_ data: Data, name: String, mime: String) async {
+        guard let c = client else { return }
+        if !(await ensureSid()) { return }
+        do {
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("up-\(UUID().uuidString)-\(name)")
+            try data.write(to: dest)
+            let uploaded = try await c.upload(sid: currentSid, fileURL: dest, filename: name, mime: mime)
+            pendingAttach.append(uploaded)
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
@@ -313,6 +390,9 @@ final class AppStore: ObservableObject {
 
     private func settleTurn() {
         flushLive()
+        for i in messages.indices where messages[i].running {
+            messages[i].running = false
+        }
         busy = false
         streamId = ""
         UserDefaults.standard.set("", forKey: "lastStreamId")
@@ -320,7 +400,7 @@ final class AppStore: ObservableObject {
         Task { await loadSessions() }
         if !outbound.isEmpty {
             let next = outbound.removeFirst()
-            Task { await startTurn(next.0) }
+            Task { await startTurn(next.0, next.1) }
         }
     }
 
@@ -338,12 +418,33 @@ final class AppStore: ObservableObject {
             liveText += (obj["text"] as? String) ?? (obj["delta"] as? String) ?? ""
             busy = true
         } else if ev == "todo_state", let arr = obj["todos"] as? [[String: Any]] {
-            todos = arr.map { t in
-                TodoItem(id: t["id"] as? String, content: t["content"] as? String, text: t["text"] as? String, title: t["title"] as? String, status: t["status"] as? String)
+            todos = arr.enumerated().map { i, t in
+                TodoItem(
+                    id: (t["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "\(i)",
+                    content: (t["content"] as? String) ?? (t["text"] as? String) ?? (t["title"] as? String) ?? "",
+                    status: (t["status"] as? String) ?? "pending"
+                )
+            }
+        } else if ev.contains("think") || ev == "reasoning" {
+            let piece = (obj["text"] as? String) ?? (obj["delta"] as? String) ?? (obj["content"] as? String) ?? (obj["thinking"] as? String) ?? ""
+            if let idx = messages.lastIndex(where: { $0.role == "thinking" && $0.running }) {
+                messages[idx].content += piece
+            } else if !piece.isEmpty {
+                messages.append(ChatMessage(id: "th-\(Int(Date().timeIntervalSince1970 * 1000))", role: "thinking", content: piece, running: true))
             }
         } else if ev.contains("tool") {
-            let name = (obj["name"] as? String) ?? (obj["tool"] as? String) ?? "tool"
-            messages.append(ChatMessage(role: "assistant", content: "", tool_name: name))
+            let name = (obj["name"] as? String) ?? (obj["tool"] as? String) ?? (obj["function"] as? String) ?? "tool"
+            let preview = (obj["preview"] as? String) ?? (obj["snippet"] as? String) ?? (obj["result"] as? String) ?? (obj["output"] as? String) ?? (obj["text"] as? String) ?? ""
+            let done = ev.contains("done") || ev.contains("result") || ev.contains("end") || (obj["done"] as? String) == "true"
+            if let idx = messages.lastIndex(where: { $0.role == "tool" && $0.tool == name && $0.running }) {
+                if !preview.isEmpty {
+                    messages[idx].preview = preview
+                    messages[idx].content = preview
+                }
+                messages[idx].running = !done
+            } else {
+                messages.append(ChatMessage(id: "t-\(Int(Date().timeIntervalSince1970 * 1000))", role: "tool", content: preview, tool: name, preview: preview, running: !done))
+            }
         } else if ev == "done" || ev.contains("complete") {
             settleTurn()
         } else if ev == "error" {
@@ -378,7 +479,7 @@ final class AppStore: ObservableObject {
     private func flushLive() {
         if !liveText.isEmpty {
             let text = liveText
-            messages.append(ChatMessage(role: "assistant", content: text))
+            messages.append(ChatMessage(id: "a-\(Int(Date().timeIntervalSince1970 * 1000))", role: "assistant", content: text))
             liveText = ""
             if speakReplies { Task { await speak(text) } }
         }
@@ -494,7 +595,21 @@ final class AppStore: ObservableObject {
     }
 
     func startListen() {
+        AVAudioSession.sharedInstance().requestRecordPermission { [weak self] ok in
+            Task { @MainActor in
+                guard let self else { return }
+                if !ok {
+                    self.error = "Microphone permission denied"
+                    return
+                }
+                self.beginRecording()
+            }
+        }
+    }
+
+    private func beginRecording() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-dictation.m4a")
+        try? FileManager.default.removeItem(at: url)
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 16000,
@@ -552,7 +667,7 @@ final class AppStore: ObservableObject {
         await client?.switchProfile(name: name)
         await loadPanel()
         await loadSessions()
-        models = await client?.models() ?? []
+        await loadModels()
     }
 
     func setLogFile(_ file: String) async {
@@ -564,11 +679,17 @@ final class AppStore: ObservableObject {
         guard let c = client, !settingEdits.isEmpty else { return }
         var body: [String: Any] = [:]
         for (k, v) in settingEdits {
-            if v == "true" || v == "false" { body[k] = (v == "true") }
-            else if let n = Int(v) { body[k] = n }
+            let item = settingsItems.first { $0.key == k }
+            if item?.type == "bool" || v == "true" || v == "false" { body[k] = (v == "true") }
+            else if item?.type == "number" || Int(v) != nil { body[k] = Int(v) ?? v }
             else { body[k] = v }
         }
         await c.saveSettings(body)
+        await loadPanel()
+    }
+
+    func setProviderKey(_ id: String, _ key: String) async {
+        await client?.setProviderKey(id: id, key: key)
         await loadPanel()
     }
 
@@ -589,7 +710,9 @@ final class AppStore: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
-                guard let self, let c = self.client, self.loggedIn, !self.currentSid.isEmpty else { continue }
+                guard let self, let c = self.client, self.loggedIn else { continue }
+                if self.panel == .dashboard { await self.loadConsole() }
+                guard !self.currentSid.isEmpty else { continue }
                 let a = await c.approval(sid: self.currentSid)
                 let q = await c.clarify(sid: self.currentSid)
                 let st = await c.sessionStatus(sid: self.currentSid)
@@ -651,7 +774,7 @@ final class AppStore: ObservableObject {
     private func holdBackground() {
         if bgTask != .invalid { return }
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "hermes-live") { [weak self] in
-            self?.endBackground()
+            Task { @MainActor in self?.endBackground() }
         }
     }
 

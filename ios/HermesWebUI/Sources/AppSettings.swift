@@ -8,6 +8,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("lastSid") var lastSid: String = ""
     @AppStorage("lastStreamId") var lastStreamId: String = ""
     @AppStorage("webuiPassword") var password: String = ""
+    @AppStorage("chatsExpanded") var chatsExpanded: Bool = false
 
     var isConfigured: Bool {
         let s = webuiURL.trimmingCharacters(in: .whitespacesAndNewlines)

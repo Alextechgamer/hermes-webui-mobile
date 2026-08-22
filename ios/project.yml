@@ -6,18 +6,21 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "0.9.0"
-    CURRENT_PROJECT_VERSION: "12"
+    MARKETING_VERSION: "0.9.1"
+    CURRENT_PROJECT_VERSION: "13"
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1,2"
+    DEVELOPMENT_TEAM: "4NWGM88HF2"
 targets:
   HermesWebUI:
     type: application
     platform: iOS
     sources:
       - path: HermesWebUI/Sources
-    resources:
       - path: HermesWebUI/Resources
+        buildPhase: resources
+        excludes:
+          - Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hermes.webui
@@ -25,8 +28,35 @@ targets:
         INFOPLIST_FILE: HermesWebUI/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: "4NWGM88HF2"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
     dependencies:
       - sdk: AVFoundation.framework
+      - sdk: PhotosUI.framework
+      - sdk: UniformTypeIdentifiers.framework
     info:
       path: HermesWebUI/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Hermes WebUI
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Hermes WebUI connects to the hermes-webui instance running on your computer over your local network or VPN.
+        NSCameraUsageDescription: Attach a photo or scan to a Hermes chat.
+        NSPhotoLibraryUsageDescription: Attach a photo from your library to a Hermes chat.
+        NSMicrophoneUsageDescription: Voice input for Hermes WebUI.
+        UIStatusBarStyle: UIStatusBarStyleLightContent

@@ -38,51 +38,34 @@ struct SessionList: Codable {
     var items: [SessionRow]? { sessions ?? data }
 }
 
-struct ChatMessage: Codable, Identifiable, Hashable {
-    var id: Int64? = nil
+struct ChatMessage: Identifiable, Hashable {
+    var id: String
     var role: String = ""
     var content: String = ""
-    var tool_name: String? = nil
-    var name: String? = nil
-    var preview: String? = nil
+    var tool: String = ""
+    var preview: String = ""
     var running: Bool = false
-    var displayId: String { "\(id ?? 0)-\(role)-\(content.hashValue)-\(tool_name ?? "")" }
-    var tool: String { tool_name ?? name ?? "" }
 }
 
 struct SessionPayload: Codable {
     var session_id: String? = nil
     var title: String? = nil
     var model: String? = nil
-    var messages: [ChatMessage]? = nil
-    var todo_state: TodoState? = nil
-    var _messages_truncated: Bool? = nil
-    var active_stream_id: String? = nil
     var session: SessionInner? = nil
     struct SessionInner: Codable {
         var session_id: String? = nil
         var title: String? = nil
         var model: String? = nil
-        var messages: [ChatMessage]? = nil
-        var todo_state: TodoState? = nil
-        var _messages_truncated: Bool? = nil
-        var active_stream_id: String? = nil
     }
 }
 
-struct TodoState: Codable {
-    var todos: [TodoItem]? = nil
-}
-
-struct TodoItem: Codable, Identifiable, Hashable {
-    var id: String? = nil
-    var content: String? = nil
-    var text: String? = nil
-    var title: String? = nil
-    var status: String? = nil
-    var displayId: String { id ?? UUID().uuidString }
-    var label: String { content ?? text ?? title ?? "" }
-    var state: String { status ?? "pending" }
+struct TodoItem: Identifiable, Hashable {
+    var id: String
+    var content: String
+    var status: String
+    var displayId: String { id }
+    var label: String { content }
+    var state: String { status }
 }
 
 struct CronJob: Identifiable {
@@ -109,6 +92,7 @@ struct KanbanTask: Identifiable {
     var title: String
     var status: String
     var assignee: String
+    var priority: String
 }
 
 struct SkillRow: Identifiable {
@@ -170,6 +154,7 @@ struct Approval {
     var approvalId: String
     var tool: String
     var detail: String
+    var count: Int = 0
 }
 
 struct Clarify {
@@ -183,6 +168,23 @@ struct SettingItem: Identifiable {
     var key: String
     var type: String
     var value: String
+
+    func section() -> SettingsSection {
+        let k = key.lowercased()
+        if ["theme", "skin", "font", "accent", "density", "rtl", "appearance"].contains(where: { k.contains($0) }) {
+            return .appearance
+        }
+        if ["provider", "api_key", "openrouter", "openai", "anthropic"].contains(where: { k.contains($0) }) {
+            return .providers
+        }
+        if ["password", "auth", "port", "update", "max_token", "check_for", "version"].contains(where: { k.contains($0) }) {
+            return .system
+        }
+        if ["sidebar", "session", "tool", "think", "mermaid", "message_mode", "conversation", "transcript", "stream", "compact", "pin"].contains(where: { k.contains($0) }) {
+            return .conversation
+        }
+        return .preferences
+    }
 }
 
 enum Panel: String, CaseIterable, Identifiable {
@@ -214,6 +216,23 @@ enum Panel: String, CaseIterable, Identifiable {
     }
 }
 
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case conversation, appearance, preferences, providers, plugins, extensions, system, help
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .conversation: return "Conversation"
+        case .appearance: return "Appearance"
+        case .preferences: return "Preferences"
+        case .providers: return "Providers"
+        case .plugins: return "Plugins"
+        case .extensions: return "Extensions"
+        case .system: return "System"
+        case .help: return "Help"
+        }
+    }
+}
+
 struct ChatStart: Codable {
     var stream_id: String? = nil
     var session_id: String? = nil
@@ -241,4 +260,46 @@ struct FileDoc {
     var path: String
     var content: String
     var lines: Int
+}
+
+struct PendingAttach: Identifiable, Hashable {
+    var name: String
+    var path: String
+    var mime: String = ""
+    var isImage: Bool = false
+    var id: String { path }
+}
+
+struct ProviderRow: Identifiable {
+    var id: String
+    var displayName: String
+    var hasKey: Bool
+    var configurable: Bool
+    var keySource: String
+}
+
+struct PluginRow: Identifiable {
+    var id: String { name }
+    var name: String
+    var description: String
+    var enabled: Bool = true
+}
+
+struct ExtensionRow: Identifiable {
+    var id: String
+    var name: String
+    var enabled: Bool = false
+    var description: String = ""
+}
+
+struct ModelOption: Identifiable, Hashable {
+    var id: String
+    var label: String
+    var provider: String
+}
+
+struct SavedPrompt: Identifiable {
+    var id: String
+    var label: String
+    var text: String
 }

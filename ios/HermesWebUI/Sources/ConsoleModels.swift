@@ -115,6 +115,12 @@ enum ConsoleFmt {
         return "\(n)"
     }
     static func int(_ n: Int64) -> String { "\(n)" }
+    static func age(_ s: Double) -> String {
+        if s < 90 { return "just now" }
+        if s < 3600 { return "\(Int(s / 60))m ago" }
+        if s < 86400 { return "\(Int(s / 3600))h ago" }
+        return "\(Int(s / 86400))d ago"
+    }
     static func consoleBase(webui: String, override: String) -> String {
         let o = override.trimmingCharacters(in: .whitespacesAndNewlines)
         if !o.isEmpty { return o.hasSuffix("/") ? String(o.dropLast()) : o }
