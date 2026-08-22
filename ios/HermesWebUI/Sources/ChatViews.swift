@@ -38,11 +38,26 @@ struct ChatPane: View {
                                     .font(.system(size: 20, weight: .semibold))
                                     .tracking(-0.3)
                                     .foregroundColor(Palette.text)
-                                Text("Same live chat as desktop Hermes WebUI. Type below — no refresh.")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(Palette.muted)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 24)
+                                if !store.sessions.isEmpty {
+                                    Text("Recent conversations")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Palette.muted)
+                                        .padding(.top, 16)
+                                    ForEach(store.sessions.prefix(12)) { row in
+                                        Button {
+                                            Task { await store.open(row) }
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(row.displayTitle).foregroundColor(Palette.text)
+                                                Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(10)
+                                            .background(Palette.surface)
+                                            .cornerRadius(10)
+                                        }
+                                    }
+                                }
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.top, 72)

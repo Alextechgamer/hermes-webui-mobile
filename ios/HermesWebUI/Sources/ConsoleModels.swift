@@ -132,3 +132,29 @@ enum ConsoleFmt {
         return s.isEmpty ? "" : s + ":8790"
     }
 }
+
+struct CostConfig: Codable {
+    var subscriptions: [CostPlan] = []
+    var models: [CostModelRate] = []
+    var providers: [String] = []
+}
+
+struct CostPlan: Codable, Identifiable, Hashable {
+    var name: String = ""
+    var price_usd: Double = 0
+    var cycle: String = "monthly"
+    var note: String = ""
+    var covers_providers: [String] = []
+    var id: String { name.isEmpty ? UUID().uuidString : name }
+}
+
+struct CostModelRate: Codable, Identifiable, Hashable {
+    var id: String = ""
+    var provider: String = ""
+    var requests: Int64 = 0
+    var input: Double = 0
+    var output: Double = 0
+    var cache_read: Double = 0
+    var cache_write: Double = 0
+    var has_rate: Bool = false
+}

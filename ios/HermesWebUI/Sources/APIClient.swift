@@ -84,28 +84,44 @@ final class APIClient {
 
     func sessions() async throws -> [SessionRow] {
         let data = try await getData("/api/sessions")
-        if let list = try? JSONDecoder().decode(SessionList.self, from: data), let items = list.items { return items }
-        if let arr = try? JSONDecoder().decode([SessionRow].self, from: data) { return arr }
-        if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        let obj = try JSONSerialization.jsonObject(with: data)
+        var raw: [Any] = []
+        if let arr = obj as? [Any] { raw = arr }
+        else if let d = obj as? [String: Any] {
             for k in ["sessions", "data", "items"] {
-                if let raw = obj[k],
-                   let d = try? JSONSerialization.data(withJSONObject: raw),
-                   let rows = try? JSONDecoder().decode([SessionRow].self, from: d) {
-                    return rows
-                }
+                if let arr = d[k] as? [Any] { raw = arr; break }
             }
         }
-        return []
+        return raw.compactMap { item in
+            guard let d = item as? [String: Any] else { return nil }
+            let sid = str(d, "session_id", "id")
+            if sid.isEmpty { return nil }
+            var row = SessionRow()
+            row.session_id = sid
+            row.raw_id = str(d, "id")
+            row.title = first(d, "title")
+            row.preview = first(d, "preview", "snippet", "last_message")
+            row.messages = int(d, "messages")
+            row.message_count = int(d, "message_count")
+            row.source = first(d, "source")
+            row.updated_at = first(d, "updated_at")
+            row.model = first(d, "model")
+            if let b = d["pinned"] as? Bool { row.pinned = b }
+            return row
+        }
     }
 
     func loadSession(id: String, full: Bool = false) async throws -> SessionLoad {
         let qid = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
-        let extra = full ? "&full=1" : "&msg_limit=80"
+        let extra = full ? "&full=1" : "&msg_limit=200"
         let data = try await getData("/api/session?session_id=\(qid)&messages=1&resolve_model=0\(extra)")
         let obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         let sess = obj["session"] as? [String: Any] ?? obj
-        let rawMsgs = (sess["messages"] as? [[String: Any]]) ?? (obj["messages"] as? [[String: Any]]) ?? []
-        let msgs = rawMsgs.flatMap { parseChatRows($0) }
+        let rawMsgs = (sess["messages"] as? [Any]) ?? (obj["messages"] as? [Any]) ?? []
+        let msgs = rawMsgs.enumerated().flatMap { i, item -> [ChatMessage] in
+            guard let m = item as? [String: Any] else { return [] }
+            return parseChatRows(m, fallbackId: "\(i)")
+        }
         let todoObj = (sess["todo_state"] as? [String: Any]) ?? (obj["todo_state"] as? [String: Any])
         let todos = ((todoObj?["todos"] as? [[String: Any]]) ?? []).enumerated().map { i, t in
             TodoItem(
@@ -124,15 +140,15 @@ final class APIClient {
         )
     }
 
-    private func parseChatRows(_ m: [String: Any]) -> [ChatMessage] {
+    private func parseChatRows(_ m: [String: Any], fallbackId: String = "0") -> [ChatMessage] {
         let role = (m["role"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "assistant"
-        let content = first(m, "content", "text") ?? ""
+        let content = textValue(m["content"]) ?? first(m, "content", "text") ?? ""
         let tool = first(m, "tool_name", "name", "tool") ?? ""
         let baseId: String
         if let n = m["id"] as? Int64 { baseId = "\(n)" }
         else if let n = m["id"] as? Int { baseId = "\(n)" }
         else if let s = m["id"] as? String, !s.isEmpty { baseId = s }
-        else { baseId = "\(role)-\(content.hashValue)" }
+        else { baseId = "\(role)-\(fallbackId)" }
         var out: [ChatMessage] = []
         if let calls = m["tool_calls"] as? [[String: Any]] {
             for (i, call) in calls.enumerated() {
@@ -531,6 +547,35 @@ final class APIClient {
         return try JSONDecoder().decode(ConsoleUsage.self, from: data)
     }
 
+    func costConfig(dashBase: String) async throws -> CostConfig {
+        var s = dashBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasSuffix("/") { s.removeLast() }
+        if !s.contains("://") { s = "http://\(s)" }
+        guard let u = URL(string: s + "/api/cost-config") else { throw URLError(.badURL) }
+        var r = URLRequest(url: u)
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(CostConfig.self, from: data)
+    }
+
+    func saveCostConfig(dashBase: String, body: [String: Any]) async throws {
+        var s = dashBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasSuffix("/") { s.removeLast() }
+        if !s.contains("://") { s = "http://\(s)" }
+        guard let u = URL(string: s + "/api/cost-config") else { throw URLError(.badURL) }
+        var r = URLRequest(url: u)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (_, resp) = try await session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     func models() async -> (String, [ModelOption]) {
         guard let data = try? await getData("/api/models"),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return ("", []) }
@@ -671,8 +716,25 @@ final class APIClient {
     private func first(_ d: [String: Any], _ keys: String...) -> String? { first(d, keys) }
     private func first(_ d: [String: Any], _ keys: [String]) -> String? {
         for k in keys {
-            if let s = d[k] as? String, !s.isEmpty { return s }
-            if let n = d[k] as? NSNumber { return n.stringValue }
+            if let s = textValue(d[k]), !s.isEmpty { return s }
+        }
+        return nil
+    }
+    private func textValue(_ any: Any?) -> String? {
+        guard let any else { return nil }
+        if let s = any as? String { return s.isEmpty ? nil : s }
+        if let n = any as? NSNumber { return n.stringValue }
+        if let arr = any as? [Any] {
+            let parts = arr.compactMap { item -> String? in
+                if let s = item as? String { return s }
+                if let d = item as? [String: Any] { return first(d, ["text", "content", "value"]) }
+                return nil
+            }
+            let joined = parts.joined(separator: "\n")
+            return joined.isEmpty ? nil : joined
+        }
+        if let d = any as? [String: Any] {
+            if let t = first(d, ["text", "content", "value"]) { return t }
         }
         return nil
     }

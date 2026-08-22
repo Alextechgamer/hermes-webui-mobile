@@ -246,11 +246,12 @@ fun DashboardPane(vm: AppVm) {
                 Text(notes.joinToString("\n"), color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
             }
         }
+        item { CostEditor(vm) }
         item {
             Text(
                 "Refresh",
                 color = Wui.Accent,
-                modifier = Modifier.padding(bottom = 20.dp).clickable { vm.loadPanel(Panel.Dashboard) },
+                modifier = Modifier.padding(bottom = 20.dp).clickable { vm.loadConsole() },
             )
         }
     }

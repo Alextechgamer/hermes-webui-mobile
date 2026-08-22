@@ -213,27 +213,7 @@ struct TodosPane: View {
 
 struct InsightsPane: View {
     @ObservedObject var store: AppStore
-    var body: some View {
-        let i = store.insights
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Insights · last \(i.days) days").font(.title2).foregroundColor(Palette.text)
-                row("Sessions", "\(i.sessions)")
-                row("Messages", "\(i.messages)")
-                row("Tokens", "\(i.tokens)")
-                row("Cost", String(format: "$%.4f", i.cost))
-                if let h = i.cacheHit { row("Cache hit", String(format: "%.1f%%", h)) }
-                Text("Models").foregroundColor(Palette.accent)
-                ForEach(i.models) { m in
-                    Text(String(format: "%@ · %d sessions · %d tok · $%.4f", m.model, m.sessions, m.tokens, m.cost))
-                        .foregroundColor(Palette.text).font(.footnote)
-                }
-            }.padding(16)
-        }
-    }
-    private func row(_ k: String, _ v: String) -> some View {
-        HStack { Text(k).foregroundColor(Palette.muted); Spacer(); Text(v).foregroundColor(Palette.text) }
-    }
+    var body: some View { DashboardPane(store: store) }
 }
 
 struct LogsPane: View {
@@ -352,6 +332,7 @@ struct DashboardPane: View {
                     .padding(.vertical, 6)
                 }
                 Button("Refresh") { Task { await store.loadConsole() } }.foregroundColor(Palette.accent)
+                CostEditorView(store: store)
             }.padding(16)
         }
     }

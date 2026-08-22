@@ -526,6 +526,31 @@ class ApiClient(base: String, prefs: Prefs) {
         }
     }
 
+    fun costConfig(dashBase: String): CostConfig {
+        val root = dashBase.trim().trimEnd('/')
+        if (root.isBlank()) throw IllegalStateException("Set the Hermes Console URL (:8790)")
+        val req = Request.Builder().url("$root/api/cost-config").header("Accept", "application/json").build()
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw RuntimeException("Console ${resp.code}")
+            return json.decodeFromString(CostConfig.serializer(), body)
+        }
+    }
+
+    fun saveCostConfig(dashBase: String, body: String) {
+        val root = dashBase.trim().trimEnd('/')
+        if (root.isBlank()) throw IllegalStateException("Set the Hermes Console URL (:8790)")
+        val req = Request.Builder()
+            .url("$root/api/cost-config")
+            .header("Accept", "application/json")
+            .post(body.toRequestBody(media))
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw RuntimeException("Console ${resp.code}: ${text.take(200)}")
+        }
+    }
+
     fun models(): Pair<String, List<ModelOption>> {
         val root = parse("/api/models").asObj()
         val default = root.str("default_model", "model")

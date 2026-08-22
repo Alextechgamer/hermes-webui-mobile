@@ -21,6 +21,34 @@ data class ConsoleUsage(
 )
 
 @Serializable
+data class CostConfig(
+    val subscriptions: List<CostPlan> = emptyList(),
+    val models: List<CostModelRate> = emptyList(),
+    val providers: List<String> = emptyList(),
+)
+
+@Serializable
+data class CostPlan(
+    val name: String = "",
+    val price_usd: Double = 0.0,
+    val cycle: String = "monthly",
+    val note: String = "",
+    val covers_providers: List<String> = emptyList(),
+)
+
+@Serializable
+data class CostModelRate(
+    val id: String = "",
+    val provider: String = "",
+    val requests: Long = 0,
+    val input: Double = 0.0,
+    val output: Double = 0.0,
+    val cache_read: Double = 0.0,
+    val cache_write: Double = 0.0,
+    val has_rate: Boolean = false,
+)
+
+@Serializable
 data class ConsoleTotals(
     val requests: Long = 0,
     val tokens_total: Long = 0,

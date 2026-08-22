@@ -55,6 +55,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val dash = mutableStateListOf<DashCard>()
     val console = mutableStateOf<ConsoleUsage?>(null)
     val consoleError = mutableStateOf<String?>(null)
+    val costConfig = mutableStateOf<CostConfig?>(null)
     val settingsItems = mutableStateListOf<SettingItem>()
     val settingEdits = mutableStateOf<Map<String, String>>(emptyMap())
     val approval = mutableStateOf<Approval?>(null)
@@ -239,7 +240,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     Panel.Todos -> if (sid.isNotBlank()) open(sid, keepPanel = true)
                     Panel.Files -> loadFiles(fsPath.value)
                     Panel.Terminal -> { }
-                    Panel.Insights -> insights.value = withContext(Dispatchers.IO) { c.insights() }
+                    Panel.Insights -> {
+                        insights.value = withContext(Dispatchers.IO) { runCatching { c.insights() }.getOrDefault(Insights()) }
+                        loadConsole(includeConfig = true)
+                    }
                     Panel.Logs -> {
                         val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
                         logLines.clear(); logLines.addAll(lines)
@@ -625,15 +629,52 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         reconnect()
     }
 
-    fun loadConsole() {
+    fun loadConsole(includeConfig: Boolean = false) {
         val c = api ?: return
         viewModelScope.launch {
             try {
                 val base = ConsoleFmt.consoleBase(prefs.baseUrl, prefs.dashboardUrl)
                 console.value = withContext(Dispatchers.IO) { c.consoleUsage(base) }
+                if (includeConfig || costConfig.value == null) {
+                    costConfig.value = withContext(Dispatchers.IO) { runCatching { c.costConfig(base) }.getOrNull() }
+                }
                 consoleError.value = null
             } catch (e: Exception) {
                 consoleError.value = e.message ?: "Could not reach Hermes Console (:8790). Set the Console URL in Connection."
+            }
+        }
+    }
+
+    fun saveCostPlans(plans: List<CostPlan>) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val base = ConsoleFmt.consoleBase(prefs.baseUrl, prefs.dashboardUrl)
+                val body = kotlinx.serialization.json.Json.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(CostPlan.serializer()),
+                    plans,
+                )
+                withContext(Dispatchers.IO) { c.saveCostConfig(base, """{"subscriptions":$body}""") }
+                loadConsole(includeConfig = true)
+            } catch (e: Exception) {
+                consoleError.value = e.message
+            }
+        }
+    }
+
+    fun saveCostRates(rates: List<CostModelRate>) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val base = ConsoleFmt.consoleBase(prefs.baseUrl, prefs.dashboardUrl)
+                val body = kotlinx.serialization.json.Json.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(CostModelRate.serializer()),
+                    rates,
+                )
+                withContext(Dispatchers.IO) { c.saveCostConfig(base, """{"models":$body}""") }
+                loadConsole(includeConfig = true)
+            } catch (e: Exception) {
+                consoleError.value = e.message
             }
         }
     }
@@ -644,7 +685,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             while (isActive) {
                 delay(4000)
                 val c = api ?: continue
-                if (panel.value == Panel.Dashboard) loadConsole()
+                if (panel.value == Panel.Dashboard || panel.value == Panel.Insights) loadConsole()
                 if (!ready.value || sid.isBlank()) continue
                 runCatching {
                     val a = withContext(Dispatchers.IO) { c.approval(sid) }

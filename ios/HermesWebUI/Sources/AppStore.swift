@@ -37,6 +37,7 @@ final class AppStore: ObservableObject {
     @Published var dash: [DashCard] = []
     @Published var console = ConsoleUsage()
     @Published var consoleError: String?
+    @Published var costConfig = CostConfig()
     @Published var settingsItems: [SettingItem] = []
     @Published var settingEdits: [String: String] = [:]
     @Published var settingsSection: SettingsSection = .conversation
@@ -108,7 +109,11 @@ final class AppStore: ObservableObject {
                 startPoll()
                 listenForSessionList()
                 let last = UserDefaults.standard.string(forKey: "lastSid") ?? ""
-                if !last.isEmpty { await openSid(last, keepPanel: true) }
+                if !last.isEmpty {
+                    await openSid(last, keepPanel: true)
+                } else if let first = sessions.first, !first.sid.isEmpty {
+                    await openSid(first.sid, keepPanel: true)
+                }
                 voiceAvailable = await c.transcribeAvailable()
             } else {
                 ready = false
@@ -165,10 +170,41 @@ final class AppStore: ObservableObject {
         let base = ConsoleFmt.consoleBase(webui: c.baseURL.absoluteString, override: override)
         do {
             console = try await c.consoleUsage(dashBase: base)
+            if costConfig.models.isEmpty {
+                if let cfg = try? await c.costConfig(dashBase: base) { costConfig = cfg }
+            }
             consoleError = nil
         } catch {
             consoleError = error.localizedDescription
         }
+    }
+
+    func saveCostPlans(_ plans: [CostPlan]) async {
+        guard let c = client else { return }
+        let override = UserDefaults.standard.string(forKey: "dashboardURL") ?? ""
+        let base = ConsoleFmt.consoleBase(webui: c.baseURL.absoluteString, override: override)
+        let payload: [[String: Any]] = plans.map {
+            ["name": $0.name, "price_usd": $0.price_usd, "cycle": $0.cycle, "note": $0.note, "covers_providers": $0.covers_providers]
+        }
+        do {
+            try await c.saveCostConfig(dashBase: base, body: ["subscriptions": payload])
+            if let cfg = try? await c.costConfig(dashBase: base) { costConfig = cfg }
+            await loadConsole()
+        } catch { consoleError = error.localizedDescription }
+    }
+
+    func saveCostRates(_ rates: [CostModelRate]) async {
+        guard let c = client else { return }
+        let override = UserDefaults.standard.string(forKey: "dashboardURL") ?? ""
+        let base = ConsoleFmt.consoleBase(webui: c.baseURL.absoluteString, override: override)
+        let payload: [[String: Any]] = rates.map {
+            ["id": $0.id, "input": $0.input, "output": $0.output, "cache_read": $0.cache_read, "cache_write": $0.cache_write]
+        }
+        do {
+            try await c.saveCostConfig(dashBase: base, body: ["models": payload])
+            if let cfg = try? await c.costConfig(dashBase: base) { costConfig = cfg }
+            await loadConsole()
+        } catch { consoleError = error.localizedDescription }
     }
 
     func loadPanel() async {
@@ -190,7 +226,9 @@ final class AppStore: ObservableObject {
                 if !currentSid.isEmpty { await openSid(currentSid, keepPanel: true) }
             case .files: await loadFiles(fsPath)
             case .terminal: break
-            case .insights: insights = try await c.insights()
+            case .insights:
+                await loadConsole()
+                if let i = try? await c.insights() { insights = i }
             case .logs: logLines = try await c.logs(file: logFile)
             case .dashboard:
                 await loadConsole()

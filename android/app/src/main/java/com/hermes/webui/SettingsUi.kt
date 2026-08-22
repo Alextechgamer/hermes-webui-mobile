@@ -226,7 +226,7 @@ private fun SystemSettings(vm: AppVm) {
         Text("System", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         Text("Instance access and Hermes Console.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
         Row(
-            Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).clickable { vm.go(Panel.Dashboard) }.padding(14.dp),
+            Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).clickable { vm.go(Panel.Insights) }.padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(Modifier.weight(1f)) {
