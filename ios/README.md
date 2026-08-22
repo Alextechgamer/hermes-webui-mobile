@@ -1,7 +1,8 @@
 # iOS — native Hermes WebUI (Mac + Xcode)
 
 SwiftUI client for hermes-webui. **No WebView.** Same REST+SSE contract as
-Android (`docs/API.md`). Marketing version **0.9.2**.
+Android (`docs/API.md`). Marketing version **0.9.5**. Launcher icon is the
+official Hermes caduceus (`Assets.xcassets/AppIcon`).
 
 ```bash
 git pull
