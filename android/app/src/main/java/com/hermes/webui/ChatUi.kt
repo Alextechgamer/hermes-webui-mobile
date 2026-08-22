@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
@@ -284,7 +285,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
     }
     val workspace = vm.spaces.firstOrNull { it.last }?.name ?: vm.fsRoot.value.substringAfterLast('/').ifBlank { "Home" }
     val profile = vm.activeProfile.value.ifBlank { "default" }
-    val model = vm.selectedModel.value.ifBlank { vm.models.firstOrNull().orEmpty() }
+    val model = vm.selectedModel.value.ifBlank { vm.models.firstOrNull()?.id.orEmpty() }
 
     Column(Modifier.fillMaxWidth().background(Wui.Bg).padding(12.dp, 6.dp, 12.dp, 12.dp)) {
         if (vm.listening.value) Text("Listening — tap mic to stop", color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
@@ -302,7 +303,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
             }
         }
         if (showModels && vm.models.isNotEmpty()) {
-            ChipMenu(vm.models.map { it to it }) { m ->
+            ModelPicker(vm.models, vm.selectedModel.value) { m ->
                 vm.selectedModel.value = m
                 showModels = false
             }
@@ -372,6 +373,69 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                         tint = Wui.Bg,
                         modifier = Modifier.size(16.dp),
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelPicker(options: List<ModelOption>, selected: String, onPick: (String) -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val needle = q.trim().lowercase()
+    val filtered = if (needle.isEmpty()) options else options.filter {
+        it.id.lowercase().contains(needle) || it.label.lowercase().contains(needle) || it.provider.lowercase().contains(needle)
+    }
+    val grouped = filtered.groupBy { it.provider.ifBlank { "other" } }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .clip(WuiShapeMd)
+            .background(Wui.Surface)
+            .border(1.dp, Wui.Border, WuiShapeMd)
+            .padding(6.dp),
+    ) {
+        BasicTextField(
+            value = q,
+            onValueChange = { q = it },
+            singleLine = true,
+            textStyle = TextStyle(color = Wui.Text, fontSize = 13.sp),
+            cursorBrush = SolidColor(Wui.Accent),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .clip(WuiShapeSm)
+                .background(Wui.Bg)
+                .padding(10.dp, 8.dp),
+            decorationBox = { inner ->
+                if (q.isEmpty()) Text("Search models (openrouter, grok…)", color = Wui.Muted, fontSize = 13.sp)
+                inner()
+            },
+        )
+        Column(Modifier.height(280.dp).verticalScroll(rememberScrollState())) {
+            if (filtered.isEmpty()) {
+                Text("No models match.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(10.dp))
+            }
+            grouped.forEach { (provider, rows) ->
+                Text(
+                    provider,
+                    color = Wui.Accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(10.dp, 8.dp, 10.dp, 2.dp),
+                )
+                rows.take(80).forEach { m ->
+                    val sel = m.id == selected
+                    Text(
+                        m.label.ifBlank { m.id },
+                        color = if (sel) Wui.Accent else Wui.Text,
+                        fontSize = 13.sp,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(m.id) }.padding(10.dp, 7.dp),
+                    )
+                }
+                if (rows.size > 80) {
+                    Text("Type to filter ${rows.size - 80} more…", color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.padding(10.dp, 2.dp))
                 }
             }
         }

@@ -321,7 +321,7 @@ fun SettingsPane(vm: AppVm) {
         ErrLine(vm)
         SectionLabel("WebUI settings — same keys as Control Center. Secrets are hidden.")
         if (vm.models.isNotEmpty()) {
-            Text("Models: " + vm.models.take(8).joinToString(), color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp))
+            Text("Models: " + vm.models.take(8).joinToString { it.id }, color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp))
         }
         LazyColumn(Modifier.weight(1f)) {
             items(vm.settingsItems, key = { it.key }) { item ->

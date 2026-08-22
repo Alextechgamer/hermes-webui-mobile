@@ -423,21 +423,44 @@ class ApiClient(base: String) {
         }
     }
 
-    fun models(): List<String> {
-        val names = linkedSetOf<String>()
-        fun walk(e: JsonElement) {
-            when (e) {
-                is JsonArray -> e.forEach { walk(it) }
-                is JsonObject -> {
-                    val id = e.str("id", "name", "model")
-                    if (id.isNotBlank() && id.length < 80) names += id
-                    e.values.forEach { walk(it) }
-                }
-                else -> {}
-            }
+    fun models(): Pair<String, List<ModelOption>> {
+        val root = parse("/api/models").asObj()
+        val default = root.str("default_model", "model")
+        val out = linkedMapOf<String, ModelOption>()
+        fun add(provider: String, el: JsonElement?) {
+            val o = el?.asObjOrNull() ?: return
+            val id = o.str("id", "model").ifBlank { o.str("name") }
+            if (id.isBlank()) return
+            val label = o.str("label", "name", "display").ifBlank { id }
+            out.putIfAbsent(id, ModelOption(id, label, provider.ifBlank { id.substringBefore('/', "") }))
         }
-        runCatching { walk(parse("/api/models")) }
-        return names.toList()
+        fun addBucket(provider: String, arr: JsonArray?) {
+            arr?.forEach { add(provider, it) }
+        }
+        (root.arr("groups") ?: JsonArray(emptyList())).forEach { gEl ->
+            val g = gEl.asObjOrNull() ?: return@forEach
+            val provider = g.str("provider", "provider_id", "id", "name")
+            addBucket(provider, g.arr("models"))
+            addBucket(provider, g.arr("extra_models"))
+        }
+        addBucket(root.str("active_provider"), root.arr("models"))
+        addBucket("extra", root.arr("extra_models"))
+        if (out.isEmpty()) {
+            // last resort: walk ids, but skip provider/group metadata keys
+            fun walk(e: JsonElement) {
+                when (e) {
+                    is JsonArray -> e.forEach { walk(it) }
+                    is JsonObject -> {
+                        val id = e.str("id")
+                        if (id.contains('/') || e.containsKey("label")) add(e.str("provider"), e)
+                        e.values.forEach { walk(it) }
+                    }
+                    else -> {}
+                }
+            }
+            walk(root)
+        }
+        return default to out.values.toList()
     }
 
     fun settings(): List<SettingItem> {

@@ -416,18 +416,31 @@ final class APIClient {
 
     func models() async -> [String] {
         guard let data = try? await getData("/api/models"),
-              let el = try? JSONSerialization.jsonObject(with: data) else { return [] }
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         var names = [String]()
-        func walk(_ any: Any) {
-            if let arr = any as? [Any] { arr.forEach(walk); return }
+        var seen = Set<String>()
+        func add(_ id: String) {
+            let t = id.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || !seen.insert(t).inserted { return }
+            names.append(t)
+        }
+        func addItem(_ any: Any) {
+            if let s = any as? String { add(s); return }
             if let d = any as? [String: Any] {
-                if let id = first(d, "id", "name", "model"), id.count < 80 { names.append(id) }
-                d.values.forEach(walk)
+                if let id = d["id"] as? String { add(id) }
+                else if let id = d["model"] as? String { add(id) }
             }
         }
-        walk(el)
-        var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }
+        if let groups = root["groups"] as? [[String: Any]] {
+            for g in groups {
+                (g["models"] as? [Any])?.forEach(addItem)
+                (g["extra_models"] as? [Any])?.forEach(addItem)
+            }
+        }
+        (root["models"] as? [Any])?.forEach(addItem)
+        (root["extra_models"] as? [Any])?.forEach(addItem)
+        if names.isEmpty, let def = root["default_model"] as? String { add(def) }
+        return names
     }
 
     func settings() async throws -> [SettingItem] {

@@ -34,5 +34,9 @@ class Prefs(ctx: Context) {
         get() = prefs.getString("last_stream_id", "") ?: ""
         set(v) { prefs.edit().putString("last_stream_id", v).apply() }
 
+    var chatsExpanded: Boolean
+        get() = prefs.getBoolean("chats_expanded", false)
+        set(v) { prefs.edit().putBoolean("chats_expanded", v).apply() }
+
     val isConfigured: Boolean get() = baseUrl.isNotBlank()
 }

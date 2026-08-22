@@ -22,6 +22,12 @@ data class AuthStatus(
     val loggedIn: Boolean = false,
 )
 
+data class ModelOption(
+    val id: String,
+    val label: String,
+    val provider: String,
+)
+
 data class SessionRow(
     val sid: String,
     val title: String,

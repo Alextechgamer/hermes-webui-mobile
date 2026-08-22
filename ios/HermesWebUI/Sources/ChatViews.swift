@@ -6,6 +6,7 @@ struct ChatPane: View {
     @State private var showPrompts = false
     @State private var showModels = false
     @State private var showProfiles = false
+    @State private var modelQuery = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,14 +81,28 @@ struct ChatPane: View {
         VStack(alignment: .leading, spacing: 6) {
             if store.listening { Text("Listening…").font(.caption).foregroundColor(Palette.accent).padding(.horizontal, 12) }
             if showModels {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(store.models.prefix(16), id: \.self) { m in
-                            Text(m).font(.caption).foregroundColor(store.selectedModel == m ? Palette.accent : Palette.muted)
-                                .padding(6).onTapGesture { store.selectedModel = m; showModels = false }
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Search models (openrouter, grok…)", text: $modelQuery)
+                        .textInputAutocapitalization(.never)
+                        .padding(8)
+                        .background(Palette.bg)
+                        .foregroundColor(Palette.text)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(filteredModels.prefix(80), id: \.self) { m in
+                                Text(m)
+                                    .font(.caption)
+                                    .foregroundColor(store.selectedModel == m ? Palette.accent : Palette.text)
+                                    .padding(.vertical, 4)
+                                    .onTapGesture { store.selectedModel = m; showModels = false }
+                            }
                         }
-                    }.padding(.horizontal, 12)
+                    }
+                    .frame(maxHeight: 220)
                 }
+                .padding(10)
+                .background(Palette.surface)
+                .padding(.horizontal, 12)
             }
             VStack(alignment: .leading, spacing: 0) {
                 TextField("Message Hermes…", text: $draft, axis: .vertical)
@@ -119,6 +134,12 @@ struct ChatPane: View {
             .padding(12)
         }
         .background(Palette.bg)
+    }
+
+    private var filteredModels: [String] {
+        let q = modelQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty { return store.models }
+        return store.models.filter { $0.lowercased().contains(q) }
     }
 }
 

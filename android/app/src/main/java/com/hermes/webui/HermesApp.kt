@@ -28,6 +28,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Search
@@ -219,7 +221,7 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
                     }
                 }
                 if (p == Panel.Chat) {
-                    ConversationList(vm, close)
+                    ConversationDropdown(vm, close)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -228,8 +230,44 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
 }
 
 @Composable
-private fun ConversationList(vm: AppVm, close: () -> Unit) {
+private fun ConversationDropdown(vm: AppVm, close: () -> Unit) {
+    var open by remember { mutableStateOf(vm.prefs.chatsExpanded) }
+    val count = vm.sessions.size
     Column(Modifier.padding(start = 18.dp, end = 8.dp, bottom = 8.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(WuiShapeMd)
+                .clickable {
+                    open = !open
+                    vm.prefs.chatsExpanded = open
+                }
+                .padding(10.dp, 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (count > 0) "Conversations · $count" else "Conversations",
+                color = Wui.Muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                if (open) "Hide conversations" else "Show conversations",
+                tint = Wui.Muted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (open) {
+            ConversationList(vm, close)
+        }
+    }
+}
+
+@Composable
+private fun ConversationList(vm: AppVm, close: () -> Unit) {
+    Column {
         Row(
             Modifier
                 .padding(vertical = 6.dp)

@@ -35,7 +35,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val busy = mutableStateOf(false)
     val title = mutableStateOf("Hermes")
     val truncated = mutableStateOf(false)
-    val models = mutableStateListOf<String>()
+    val models = mutableStateListOf<ModelOption>()
     val selectedModel = mutableStateOf("")
     val jobs = mutableStateListOf<CronJob>()
     val columns = mutableStateListOf<KanbanColumn>()
@@ -251,8 +251,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private fun loadModels() {
         val c = api ?: return
         viewModelScope.launch {
-            val list = withContext(Dispatchers.IO) { runCatching { c.models() }.getOrDefault(emptyList()) }
-            models.clear(); models.addAll(list.take(80))
+            val (default, list) = withContext(Dispatchers.IO) {
+                runCatching { c.models() }.getOrDefault("" to emptyList<ModelOption>())
+            }
+            models.clear(); models.addAll(list)
+            if (selectedModel.value.isBlank() && default.isNotBlank()) selectedModel.value = default
         }
         viewModelScope.launch {
             val list = withContext(Dispatchers.IO) { runCatching { c.prompts() }.getOrDefault(emptyList()) }

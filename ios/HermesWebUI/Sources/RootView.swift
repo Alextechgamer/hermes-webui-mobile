@@ -133,6 +133,7 @@ struct RootView: View {
 struct MenuSheet: View {
     @ObservedObject var store: AppStore
     @Binding var show: Bool
+    @AppStorage("chatsExpanded") private var chatsExpanded = false
 
     var body: some View {
         NavigationStack {
@@ -146,19 +147,33 @@ struct MenuSheet: View {
                         .foregroundColor(store.panel == p ? Palette.accent : Palette.text)
                         .listRowBackground(Palette.surface)
                         if p == .chat {
-                            TextField("Filter conversations…", text: $store.sessionQuery)
-                                .listRowBackground(Palette.surface)
-                            ForEach(filtered) { row in
-                                Button {
-                                    show = false
-                                    Task { await store.open(row) }
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        Text(row.displayTitle).foregroundColor(row.sid == store.currentSid ? Palette.accent : Palette.text)
-                                        Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
-                                    }
+                            Button {
+                                chatsExpanded.toggle()
+                            } label: {
+                                HStack {
+                                    Text(store.sessions.isEmpty ? "Conversations" : "Conversations · \(store.sessions.count)")
+                                    Spacer()
+                                    Image(systemName: chatsExpanded ? "chevron.up" : "chevron.down")
                                 }
-                                .listRowBackground(Palette.surface)
+                                .font(.subheadline)
+                                .foregroundColor(Palette.muted)
+                            }
+                            .listRowBackground(Palette.surface)
+                            if chatsExpanded {
+                                TextField("Filter conversations…", text: $store.sessionQuery)
+                                    .listRowBackground(Palette.surface)
+                                ForEach(filtered) { row in
+                                    Button {
+                                        show = false
+                                        Task { await store.open(row) }
+                                    } label: {
+                                        VStack(alignment: .leading) {
+                                            Text(row.displayTitle).foregroundColor(row.sid == store.currentSid ? Palette.accent : Palette.text)
+                                            Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+                                        }
+                                    }
+                                    .listRowBackground(Palette.surface)
+                                }
                             }
                         }
                     }
