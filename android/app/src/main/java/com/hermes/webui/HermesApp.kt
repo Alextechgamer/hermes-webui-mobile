@@ -1,5 +1,6 @@
 package com.hermes.webui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -68,6 +69,14 @@ fun HermesApp(vm: AppVm = viewModel()) {
         var urlDraft by remember { mutableStateOf(vm.prefs.baseUrl) }
         var dashDraft by remember { mutableStateOf(vm.prefs.dashboardUrl) }
         var password by remember { mutableStateOf("") }
+        val stayInApp = showConnect || drawer.isOpen || vm.canPopBack()
+        BackHandler(enabled = stayInApp) {
+            when {
+                showConnect -> showConnect = false
+                drawer.isOpen -> scope.launch { drawer.close() }
+                else -> vm.handleBack()
+            }
+        }
 
         ModalNavigationDrawer(
             drawerState = drawer,

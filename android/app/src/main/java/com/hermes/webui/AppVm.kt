@@ -139,6 +139,47 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         loadPanel(p)
     }
 
+    /** True when system back should stay in-app instead of finishing the Activity. */
+    fun canPopBack(): Boolean {
+        if (fileDoc.value != null) return true
+        if (listening.value) return true
+        if (panel.value == Panel.Files) {
+            val p = fsPath.value
+            if (p.isNotBlank() && p != ".") return true
+        }
+        return panel.value != Panel.Chat
+    }
+
+    fun handleBack(): Boolean {
+        if (fileDoc.value != null) {
+            closeFile()
+            return true
+        }
+        if (listening.value) {
+            cancelListen()
+            return true
+        }
+        if (panel.value == Panel.Files) {
+            val p = fsPath.value
+            if (p.isNotBlank() && p != ".") {
+                fsUp()
+                return true
+            }
+        }
+        if (panel.value != Panel.Chat) {
+            go(Panel.Chat)
+            return true
+        }
+        return false
+    }
+
+    fun cancelListen() {
+        listening.value = false
+        try { recorder?.stop() } catch (_: Exception) {}
+        recorder?.release()
+        recorder = null
+    }
+
     fun loadPanel(p: Panel) {
         val c = api ?: return
         viewModelScope.launch {
