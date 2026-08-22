@@ -1,19 +1,20 @@
 # iOS — native Hermes WebUI (Mac + Xcode)
 
 SwiftUI client for hermes-webui. **No WebView.** Same REST+SSE contract as
-Android (`docs/API.md`).
+Android (`docs/API.md`). Marketing version **0.9.0**.
 
 ```bash
+git pull
 cd ios && ./setup.sh && open HermesWebUI.xcodeproj
 ```
 
 First launch: enter WebUI URL (placeholder `http://192.168.1.20:8787`). Then
-password if the server requires it.
+password if the server requires it. Login is remembered.
 
-Panels: Chat, Tasks, Kanban, Skills, Memory, Spaces, Profiles, Todos,
-Files, Terminal, Insights, Logs, Dashboard, Settings.
-Dictate + speak + native Mermaid live in Chat.
+Rail: Chat, Tasks, Kanban, Skills, Memory, Spaces, Profiles, Todos,
+Insights, Logs, Settings. Conversations nest under Chat. Files / Terminal /
+Hermes Console open from the composer folder chip or Settings → System.
 
 ATS: `NSAllowsArbitraryLoads` only (do not add `NSAllowsLocalNetworking`).
 
-Linux cannot produce an iOS binary.
+Linux cannot produce an iOS binary. Archive steps: `prompts/BUILD_IOS_ON_MAC.md`.
