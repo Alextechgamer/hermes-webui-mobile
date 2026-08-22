@@ -3,30 +3,33 @@ import SwiftUI
 struct ChatPane: View {
     @ObservedObject var store: AppStore
     @Binding var draft: String
+    @State private var showPrompts = false
+    @State private var showModels = false
+    @State private var showProfiles = false
 
     var body: some View {
         VStack(spacing: 0) {
             if let a = store.approval { ApprovalBanner(a: a) { Task { await store.approve($0) } } }
             if let q = store.clarify { ClarifyBanner(q: q) { Task { await store.answerClarify($0) } } }
-            if store.truncated {
-                Button("Load full history") { Task { await store.loadFullHistory() } }
-                    .foregroundColor(Palette.accent).padding(8)
-            }
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if store.truncated {
+                            Button("Load full history") { Task { await store.loadFullHistory() } }
+                                .foregroundColor(Palette.muted).font(.caption)
+                        }
                         if store.messages.isEmpty && store.liveText.isEmpty {
-                            Text("New conversation. Same chat API as desktop WebUI — type below.")
-                                .foregroundColor(Palette.muted).padding(8)
+                            VStack(spacing: 8) {
+                                Text("What can I help with?").font(.title3.weight(.semibold)).foregroundColor(Palette.text)
+                                Text("Same live chat as desktop Hermes WebUI.")
+                                    .foregroundColor(Palette.muted).font(.footnote)
+                            }.frame(maxWidth: .infinity).padding(.top, 72)
                         }
-                        ForEach(store.messages, id: \.displayId) { m in
-                            bubble(m)
-                        }
+                        ForEach(store.messages, id: \.displayId) { m in row(m) }
                         if !store.liveText.isEmpty {
-                            bubble(ChatMessage(role: "assistant", content: store.liveText)).id("live")
+                            row(ChatMessage(role: "assistant", content: store.liveText)).id("live")
                         }
-                    }
-                    .padding(16)
+                    }.padding(16)
                 }
                 .onChange(of: store.liveText) { _ in proxy.scrollTo("live", anchor: .bottom) }
             }
@@ -34,99 +37,88 @@ struct ChatPane: View {
         }
     }
 
-    private var composer: some View {
-        VStack(spacing: 0) {
+    @ViewBuilder
+    private func row(_ m: ChatMessage) -> some View {
+        if m.role == "user" {
             HStack {
-                Button(store.speakReplies ? "Speak replies on" : "Speak replies off") {
-                    store.speakReplies.toggle()
-                }.font(.caption).foregroundColor(store.speakReplies ? Palette.accent : Palette.muted)
-                if store.listening { Text("Listening…").font(.caption).foregroundColor(Palette.accent) }
-                if store.transcribing { Text("Transcribing…").font(.caption).foregroundColor(Palette.accent) }
-                Spacer()
-            }.padding(.horizontal, 12).padding(.top, 6)
-            if !store.models.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(store.models.prefix(16), id: \.self) { m in
-                            Text(m)
-                                .font(.caption)
-                                .foregroundColor(store.selectedModel == m ? Palette.accent : Palette.muted)
-                                .padding(6)
-                                .background(Palette.surface)
-                                .cornerRadius(8)
-                                .onTapGesture { store.selectedModel = m }
-                        }
-                    }.padding(.horizontal, 10).padding(.vertical, 6)
-                }
-            }
-            HStack(alignment: .bottom) {
-                TextField("Message Hermes…", text: $draft, axis: .vertical)
-                    .lineLimit(1...6)
-                    .padding(10)
-                    .background(Palette.surface)
-                    .cornerRadius(10)
+                Spacer(minLength: 40)
+                Text(m.content)
                     .foregroundColor(Palette.text)
-                Button {
-                    if store.listening {
-                        Task {
-                            let t = await store.stopListen()
-                            if !t.isEmpty { draft = draft.isEmpty ? t : draft + " " + t }
-                        }
-                    } else {
-                        store.startListen()
-                    }
-                } label: {
-                    Image(systemName: store.listening ? "stop.circle" : "mic.circle")
-                        .font(.system(size: 26))
-                        .foregroundColor(store.listening ? .red : Palette.accent)
-                }
-                Button {
-                    let t = draft; draft = ""
-                    Task { await store.send(t) }
-                } label: {
-                    Image(systemName: store.busy ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundColor(Palette.accent)
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.busy)
-                .simultaneousGesture(TapGesture().onEnded {
-                    if store.busy { Task { await store.stop() } }
-                })
+                    .padding(12)
+                    .background(Palette.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Palette.border, lineWidth: 1))
+                    .cornerRadius(14)
             }
-            .padding(12)
-            .background(Palette.sidebar)
+        } else if m.role == "thinking" {
+            DisclosureGroup(m.running ? "Thinking" : "Thought") {
+                Text(m.content).font(.footnote).foregroundColor(Palette.muted)
+            }.foregroundColor(Palette.muted)
+        } else if m.role == "tool" || (!(m.tool_name ?? m.name ?? "").isEmpty && m.content.isEmpty) {
+            DisclosureGroup {
+                if !m.content.isEmpty { Text(m.content).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text) }
+            } label: {
+                Text(m.tool.isEmpty ? "Tool" : m.tool.replacingOccurrences(of: "_", with: " "))
+                    .foregroundColor(Palette.accent)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Hermes").font(.caption.weight(.medium)).foregroundColor(Palette.accent)
+                ForEach(Array(splitChat(m.content).enumerated()), id: \.offset) { _, seg in
+                    switch seg {
+                    case .text(let t): if !t.isEmpty { Text(t).foregroundColor(Palette.text) }
+                    case .mermaid(let src): MermaidBlock(source: src)
+                    }
+                }
+                if !m.content.isEmpty {
+                    Button("Copy") { UIPasteboard.general.string = m.content }.font(.caption).foregroundColor(Palette.muted)
+                }
+            }
         }
     }
 
-    private func bubble(_ m: ChatMessage) -> some View {
-        let mine = m.role == "user"
-        return HStack {
-            if mine { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 4) {
-                if let tool = m.tool_name ?? m.name, !tool.isEmpty {
-                    Text("⚙ \(tool)").font(.caption).foregroundColor(Palette.accent)
-                }
-                ForEach(Array(splitChat(m.content).enumerated()), id: \.offset) { _, seg in
-                    switch seg {
-                    case .text(let t):
-                        if !t.isEmpty { Text(t).foregroundColor(mine ? .black : Palette.text) }
-                    case .mermaid(let src):
-                        MermaidBlock(source: src)
-                    }
-                }
-                if !mine && !m.content.isEmpty {
-                    Button {
-                        Task { await store.speak(m.content) }
-                    } label: {
-                        Image(systemName: "speaker.wave.2").foregroundColor(Palette.accent)
-                    }
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if store.listening { Text("Listening…").font(.caption).foregroundColor(Palette.accent).padding(.horizontal, 12) }
+            if showModels {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(store.models.prefix(16), id: \.self) { m in
+                            Text(m).font(.caption).foregroundColor(store.selectedModel == m ? Palette.accent : Palette.muted)
+                                .padding(6).onTapGesture { store.selectedModel = m; showModels = false }
+                        }
+                    }.padding(.horizontal, 12)
                 }
             }
-            .padding(10)
-            .background(mine ? Palette.accent : Palette.surface)
-            .cornerRadius(12)
-            if !mine { Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 0) {
+                TextField("Message Hermes…", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
+                    .padding(12)
+                    .foregroundColor(Palette.text)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        Button { Task { await store.go(.files) } } label: { Image(systemName: "paperclip") }
+                        Button { store.startListen() } label: { Image(systemName: store.listening ? "stop.circle" : "mic") }
+                        Button(store.activeProfile.isEmpty ? "default" : store.activeProfile) { showProfiles.toggle() }
+                            .font(.caption)
+                        Button(store.selectedModel.isEmpty ? "Model" : store.selectedModel) { showModels.toggle() }
+                            .font(.caption)
+                        Button {
+                            let t = draft; draft = ""
+                            Task { await store.send(t) }
+                        } label: {
+                            Image(systemName: store.busy ? "stop.circle.fill" : "arrow.up.circle.fill")
+                                .font(.system(size: 26))
+                        }
+                    }
+                    .foregroundColor(Palette.muted)
+                    .padding(.horizontal, 12).padding(.bottom, 10)
+                }
+            }
+            .background(Palette.surface)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+            .padding(12)
         }
+        .background(Palette.bg)
     }
 }
 

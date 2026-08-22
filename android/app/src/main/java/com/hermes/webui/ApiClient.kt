@@ -124,7 +124,7 @@ class ApiClient(base: String) {
         val rootObj = el.asObj()
         val sess = rootObj.obj("session") ?: rootObj
         val msgs = (sess.arr("messages") ?: rootObj.arr("messages") ?: JsonArray(emptyList()))
-            .mapNotNull { it.asObjOrNull()?.toChat() }
+            .flatMap { it.asObjOrNull()?.toChatRows() ?: emptyList() }
         val todos = extractTodos(sess) ?: extractTodos(rootObj) ?: emptyList()
         return SessionLoad(
             title = sess.str("title").ifBlank { rootObj.str("title") },
@@ -376,6 +376,16 @@ class ApiClient(base: String) {
 
     fun switchProfile(name: String) {
         postRaw("/api/profile/switch", """{"name":${q(name)}}""")
+    }
+
+    fun prompts(): List<SavedPrompt> {
+        val o = parse("/api/prompts").asObj()
+        return (o.arr("prompts") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val text = p.str("text", "content", "prompt")
+            if (text.isBlank()) return@mapNotNull null
+            SavedPrompt(p.str("id").ifBlank { text.hashCode().toString() }, p.str("label", "title").ifBlank { text.take(48) }, text)
+        }
     }
 
     fun insights(): Insights {
@@ -663,10 +673,35 @@ private fun JsonObject.toSession(): SessionRow? {
     )
 }
 
-private fun JsonObject.toChat(): ChatMsg {
+private fun JsonObject.toChatRows(): List<ChatMsg> {
     val role = str("role").ifBlank { "assistant" }
     val id = str("id").ifBlank { "${role}-${contentHash()}" }
-    return ChatMsg(id, role, str("content", "text"), str("tool_name", "name", "tool"))
+    val content = str("content", "text")
+    val tool = str("tool_name", "name", "tool")
+    val out = mutableListOf<ChatMsg>()
+    arr("tool_calls")?.forEachIndexed { i, el ->
+        val o = el.asObjOrNull() ?: return@forEachIndexed
+        val fn = o.obj("function")
+        val name = o.str("name", "tool").ifBlank { fn?.str("name").orEmpty() }.ifBlank { "tool" }
+        val args = o.str("arguments").ifBlank { fn?.str("arguments").orEmpty() }.ifBlank { o.anyToString("args", "input") }
+        val preview = o.str("preview", "snippet", "result").ifBlank { args.take(180) }
+        out.add(ChatMsg("$id-tc-$i", "tool", args, name, preview))
+    }
+    when {
+        role == "thinking" || role == "reasoning" ->
+            if (content.isNotBlank()) out.add(ChatMsg(id, "thinking", content))
+        role == "tool" ->
+            out.add(ChatMsg(id, "tool", content, tool.ifBlank { "tool" }, content.take(240)))
+        role == "user" ->
+            out.add(ChatMsg(id, "user", content))
+        role == "system" ->
+            if (content.isNotBlank()) out.add(ChatMsg(id, "system", content))
+        else -> {
+            if (content.isNotBlank()) out.add(ChatMsg(id, "assistant", content))
+            else if (out.isEmpty() && tool.isNotBlank()) out.add(ChatMsg(id, "tool", "", tool))
+        }
+    }
+    return out
 }
 
 private fun JsonObject.contentHash(): String =

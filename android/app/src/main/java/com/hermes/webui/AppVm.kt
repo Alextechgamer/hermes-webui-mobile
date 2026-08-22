@@ -66,6 +66,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val listening = mutableStateOf(false)
     val transcribing = mutableStateOf(false)
     val voiceAvailable = mutableStateOf(false)
+    val prompts = mutableStateListOf<SavedPrompt>()
+    val showModelPicker = mutableStateOf(false)
     var sid = ""
         private set
     private var streamId = ""
@@ -253,6 +255,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             val list = withContext(Dispatchers.IO) { runCatching { c.models() }.getOrDefault(emptyList()) }
             models.clear(); models.addAll(list.take(80))
         }
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { runCatching { c.prompts() }.getOrDefault(emptyList()) }
+            prompts.clear(); prompts.addAll(list)
+        }
     }
 
     fun open(row: SessionRow) = open(row.sid)
@@ -278,7 +284,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         truncated.value = load.truncated
         bubbles.clear()
         load.messages.forEach { m ->
-            if (m.role in setOf("user", "assistant", "tool", "system")) bubbles.add(m)
+            if (m.role in setOf("user", "assistant", "tool", "thinking", "system")) bubbles.add(m)
         }
         todos.clear(); todos.addAll(load.todos)
         val liveId = load.activeStreamId
@@ -413,6 +419,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     private fun settleTurn() {
         flushLive()
+        for (i in bubbles.indices) {
+            if (bubbles[i].running) bubbles[i] = bubbles[i].copy(running = false)
+        }
         busy.value = false
         streamId = ""
         prefs.lastStreamId = ""
@@ -868,9 +877,31 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
+                e.contains("think") || e == "reasoning" -> {
+                    val piece = obj?.prim("text", "delta", "content", "thinking") ?: ""
+                    val idx = bubbles.indexOfLast { it.role == "thinking" && it.running }
+                    if (idx >= 0) {
+                        val cur = bubbles[idx]
+                        bubbles[idx] = cur.copy(content = cur.content + piece)
+                    } else if (piece.isNotBlank()) {
+                        bubbles.add(ChatMsg("th-${System.currentTimeMillis()}", "thinking", piece, running = true))
+                    }
+                }
                 e.contains("tool") -> {
                     val name = obj?.prim("name", "tool", "function") ?: "tool"
-                    bubbles.add(ChatMsg("t-${System.currentTimeMillis()}", "assistant", "", name))
+                    val preview = obj?.prim("preview", "snippet", "result", "output", "text") ?: ""
+                    val done = e.contains("done") || e.contains("result") || e.contains("end") || obj?.prim("done") == "true"
+                    val idx = bubbles.indexOfLast { it.role == "tool" && it.tool == name && it.running }
+                    if (idx >= 0) {
+                        val cur = bubbles[idx]
+                        bubbles[idx] = cur.copy(
+                            preview = preview.ifBlank { cur.preview },
+                            content = if (preview.isNotBlank()) preview else cur.content,
+                            running = !done,
+                        )
+                    } else {
+                        bubbles.add(ChatMsg("t-${System.currentTimeMillis()}", "tool", preview, name, preview, running = !done))
+                    }
                 }
                 e == "done" || e.contains("complete") -> {
                     settleTurn()

@@ -135,7 +135,6 @@ fun HermesApp(vm: AppVm = viewModel()) {
 @Composable
 private fun WebTopbar(vm: AppVm, onMenu: () -> Unit, onConnect: () -> Unit) {
     val title = if (vm.panel.value == Panel.Chat && vm.title.value.isNotBlank()) vm.title.value else vm.panel.value.label
-    val model = vm.selectedModel.value
     Row(
         Modifier
             .fillMaxWidth()
@@ -160,10 +159,6 @@ private fun WebTopbar(vm: AppVm, onMenu: () -> Unit, onConnect: () -> Unit) {
             if (vm.panel.value == Panel.Chat && vm.busy.value) {
                 Text("Hermes is working…", color = Wui.AccentText, fontSize = 11.sp)
             }
-        }
-        if (model.isNotBlank() && vm.panel.value == Panel.Chat) {
-            WuiChip(model.take(22), selected = true)
-            Spacer(Modifier.width(6.dp))
         }
         if (vm.panel.value == Panel.Chat && vm.busy.value) {
             IconBtn(Icons.Outlined.Stop, "Stop", Wui.Accent) { vm.stop() }

@@ -44,7 +44,10 @@ struct ChatMessage: Codable, Identifiable, Hashable {
     var content: String = ""
     var tool_name: String? = nil
     var name: String? = nil
+    var preview: String? = nil
+    var running: Bool = false
     var displayId: String { "\(id ?? 0)-\(role)-\(content.hashValue)-\(tool_name ?? "")" }
+    var tool: String { tool_name ?? name ?? "" }
 }
 
 struct SessionPayload: Codable {

@@ -39,6 +39,14 @@ data class ChatMsg(
     val role: String,
     val content: String,
     val tool: String = "",
+    val preview: String = "",
+    val running: Boolean = false,
+)
+
+data class SavedPrompt(
+    val id: String,
+    val label: String,
+    val text: String,
 )
 
 data class CronJob(
