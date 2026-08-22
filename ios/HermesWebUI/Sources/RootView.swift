@@ -67,7 +67,18 @@ struct RootView: View {
                     .foregroundColor(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 TextField("", text: $urlDraft, prompt: Text("http://host:8787").foregroundColor(Palette.muted))
+                    .textContentType(.username)
                     .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                    .submitLabel(.next)
+                    .padding(14)
+                    .background(Palette.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
+                    .cornerRadius(12)
+                    .foregroundColor(Palette.text)
+                SecureField("", text: $password, prompt: Text("Password (same as desktop WebUI)").foregroundColor(Palette.muted))
+                    .textContentType(.password)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .submitLabel(.continue)
                     .padding(14)
                     .background(Palette.surface)
@@ -115,6 +126,7 @@ struct RootView: View {
         guard !urlText.isEmpty else { return }
         settings.webuiURL = urlText
         settings.dashboardURL = dashDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !password.isEmpty { settings.password = password }
         guard let url = settings.normalizedURL else { return }
         store.attach(url: url)
         Task { await store.bootstrap() }
@@ -123,13 +135,29 @@ struct RootView: View {
     private var login: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sign in").font(.system(size: 22, weight: .semibold)).foregroundColor(Palette.text)
-            Text("Same password as desktop WebUI.").font(.system(size: 13)).foregroundColor(Palette.muted)
+            Text("Saved on this phone and offered to Proton Pass / iCloud Keychain.")
+                .font(.system(size: 13)).foregroundColor(Palette.muted)
+            TextField("", text: $urlDraft, prompt: Text("WebUI address").foregroundColor(Palette.muted))
+                .textContentType(.username)
+                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                .padding(14)
+                .background(Palette.surface)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
+                .cornerRadius(12)
+                .foregroundColor(Palette.text)
             SecureField("Password", text: $password)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .padding(14)
                 .background(Palette.surface)
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
                 .cornerRadius(12)
             Button {
+                if !urlDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    settings.webuiURL = urlDraft
+                }
+                settings.password = password
                 Task { await store.login(password) }
             } label: {
                 Text("Sign in")
@@ -400,13 +428,17 @@ struct ConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var urlDraft = ""
     @State private var dashDraft = ""
+    @State private var password = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Connection") {
                     TextField("WebUI URL", text: $urlDraft)
+                        .textContentType(.username)
                         .textInputAutocapitalization(.never).keyboardType(.URL)
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
                     TextField("Hermes Console URL (optional)", text: $dashDraft)
                         .textInputAutocapitalization(.never).keyboardType(.URL)
                         .textContentType(.none)
@@ -421,6 +453,7 @@ struct ConnectSheet: View {
                     Button("Save") {
                         settings.webuiURL = urlDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                         settings.dashboardURL = dashDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !password.isEmpty { settings.password = password }
                         if let url = settings.normalizedURL {
                             store.attach(url: url)
                             Task { await store.bootstrap() }
@@ -433,6 +466,7 @@ struct ConnectSheet: View {
             .onAppear {
                 urlDraft = settings.webuiURL
                 dashDraft = settings.dashboardURL
+                password = settings.password
             }
         }
         .preferredColorScheme(.dark)

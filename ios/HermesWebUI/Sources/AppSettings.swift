@@ -7,8 +7,23 @@ final class AppSettings: ObservableObject {
     @AppStorage("dashboardURL") var dashboardURL: String = ""
     @AppStorage("lastSid") var lastSid: String = ""
     @AppStorage("lastStreamId") var lastStreamId: String = ""
-    @AppStorage("webuiPassword") var password: String = ""
+    @AppStorage("webuiPassword") private var storedPassword: String = ""
     @AppStorage("chatsExpanded") var chatsExpanded: Bool = false
+
+    var password: String {
+        get {
+            if !storedPassword.isEmpty { return storedPassword }
+            if let kc = WebUIKeychain.read(), !kc.isEmpty {
+                storedPassword = kc
+                return kc
+            }
+            return ""
+        }
+        set {
+            storedPassword = newValue
+            WebUIKeychain.write(newValue)
+        }
+    }
 
     var isConfigured: Bool {
         let s = webuiURL.trimmingCharacters(in: .whitespacesAndNewlines)

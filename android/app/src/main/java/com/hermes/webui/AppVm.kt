@@ -150,6 +150,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             try {
                 withContext(Dispatchers.IO) { c.login(password) }
                 prefs.password = password
+                commitAutofill()
                 needsLogin.value = false
                 ready.value = true
                 refreshSessions()
@@ -158,6 +159,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             } catch (_: Exception) {
                 error.value = "Login failed"
             }
+        }
+    }
+
+    private fun commitAutofill() {
+        runCatching {
+            getApplication<Application>()
+                .getSystemService(android.view.autofill.AutofillManager::class.java)
+                ?.commit()
         }
     }
 
@@ -623,9 +632,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveUrl(url: String, dashboard: String = prefs.dashboardUrl) {
+    fun saveUrl(url: String, dashboard: String = prefs.dashboardUrl, password: String? = null) {
         prefs.baseUrl = url
         prefs.dashboardUrl = dashboard
+        if (!password.isNullOrBlank()) prefs.password = password
         reconnect()
     }
 

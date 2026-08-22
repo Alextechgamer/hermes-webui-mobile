@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.hermes.webui
 
 import androidx.activity.compose.BackHandler
@@ -23,7 +25,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.autofill.AutofillNode
+import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalAutofill
+import androidx.compose.ui.platform.LocalAutofillTree
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -103,10 +115,13 @@ fun HermesApp(vm: AppVm = viewModel()) {
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().background(Wui.Bg)) {
                     when {
-                        !vm.configured.value -> ConnectPane(urlDraft, { urlDraft = it }, dashDraft, { dashDraft = it }) {
-                            vm.saveUrl(urlDraft, dashDraft)
+                        !vm.configured.value -> ConnectPane(urlDraft, { urlDraft = it }, dashDraft, { dashDraft = it }, password, { password = it }) {
+                            vm.saveUrl(urlDraft, dashDraft, password)
                         }
-                        vm.needsLogin.value -> LoginPane(password, { password = it }, { vm.login(password) }, vm.error.value)
+                        vm.needsLogin.value -> LoginPane(urlDraft, { urlDraft = it }, password, { password = it }, {
+                            if (urlDraft.isNotBlank() && urlDraft != vm.prefs.baseUrl) vm.saveUrl(urlDraft, dashDraft, password)
+                            vm.login(password)
+                        }, vm.error.value)
                         else -> PanelHost(vm)
                     }
                 }
@@ -348,36 +363,94 @@ fun PanelHost(vm: AppVm) {
 }
 
 @Composable
-private fun ConnectPane(url: String, onUrl: (String) -> Unit, dash: String, onDash: (String) -> Unit, onGo: () -> Unit) {
+private fun ConnectPane(
+    url: String,
+    onUrl: (String) -> Unit,
+    dash: String,
+    onDash: (String) -> Unit,
+    password: String,
+    onPassword: (String) -> Unit,
+    onGo: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("HERMES", color = Wui.Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
         Text("WebUI", color = Wui.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
         Spacer(Modifier.height(12.dp))
         Text("Native client — same dark-gold chrome as the desktop WebUI. Not a WebView.", color = Wui.Muted, fontSize = 14.sp, lineHeight = 20.sp)
         Spacer(Modifier.height(20.dp))
-        OutlinedTextField(url, onUrl, placeholder = { Text("http://host:8787", color = Wui.Muted) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
+        OutlinedTextField(
+            url,
+            onUrl,
+            label = { Text("WebUI address") },
+            placeholder = { Text("http://host:8787", color = Wui.Muted) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().autofillHint(AutofillType.Username, onUrl),
+            shape = WuiShapeMd,
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            password,
+            onPassword,
+            label = { Text("Password") },
+            placeholder = { Text("Same as desktop WebUI", color = Wui.Muted) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onGo() }),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().autofillHint(AutofillType.Password, onPassword),
+            shape = WuiShapeMd,
+            singleLine = true,
+        )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(dash, onDash, placeholder = { Text("Hermes Console http://host:8790 (optional)", color = Wui.Muted) }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
+        Spacer(Modifier.height(8.dp))
+        Text("Password is saved on this phone and offered to Proton Pass / Google / iCloud.", color = Wui.Muted, fontSize = 12.sp)
         Spacer(Modifier.height(16.dp))
         Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(WuiShapeMd)
-                .background(Wui.Accent)
-                .clickable(onClick = onGo)
-                .padding(14.dp),
+            Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Accent).clickable(onClick = onGo).padding(14.dp),
             contentAlignment = Alignment.Center,
         ) { Text("Continue", color = Wui.Bg, fontWeight = FontWeight.SemiBold) }
     }
 }
 
 @Composable
-private fun LoginPane(pw: String, onPw: (String) -> Unit, onGo: () -> Unit, err: String?) {
+private fun LoginPane(
+    url: String,
+    onUrl: (String) -> Unit,
+    pw: String,
+    onPw: (String) -> Unit,
+    onGo: () -> Unit,
+    err: String?,
+) {
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
         Text("Sign in", color = Wui.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Text("Same password as desktop WebUI.", color = Wui.Muted, fontSize = 13.sp)
+        Text("Saved here and in your password manager. You should not have to type it again.", color = Wui.Muted, fontSize = 13.sp)
         Spacer(Modifier.height(16.dp))
-        OutlinedTextField(pw, onPw, visualTransformation = PasswordVisualTransformation(), colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
+        OutlinedTextField(
+            url,
+            onUrl,
+            label = { Text("WebUI address") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().autofillHint(AutofillType.Username, onUrl),
+            shape = WuiShapeMd,
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            pw,
+            onPw,
+            label = { Text("Password") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onGo() }),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth().autofillHint(AutofillType.Password, onPw),
+            shape = WuiShapeMd,
+            singleLine = true,
+        )
         Spacer(Modifier.height(12.dp))
         Box(
             Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Accent).clickable(onClick = onGo).padding(14.dp),
@@ -395,4 +468,18 @@ fun ErrLine(vm: AppVm) {
 @Composable
 fun SectionLabel(text: String) {
     Text(text, color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp))
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun Modifier.autofillHint(type: AutofillType, onFill: (String) -> Unit): Modifier {
+    val autofill = LocalAutofill.current
+    val node = AutofillNode(autofillTypes = listOf(type), onFill = onFill)
+    LocalAutofillTree.current += node
+    return this
+        .onGloballyPositioned { node.boundingBox = it.boundsInWindow() }
+        .onFocusChanged { focus ->
+            if (focus.isFocused) autofill?.requestAutofillForNode(node)
+            else autofill?.cancelAutofillForNode(node)
+        }
 }

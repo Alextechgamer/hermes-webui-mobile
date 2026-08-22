@@ -90,15 +90,19 @@ final class AppStore: ObservableObject {
             authEnabled = st.auth_enabled
             loggedIn = st.logged_in || !st.auth_enabled
             needsLogin = st.auth_enabled && !st.logged_in
-            if needsLogin, let pw = UserDefaults.standard.string(forKey: "webuiPassword"), !pw.isEmpty {
-                do {
-                    try await c.login(password: pw)
-                    needsLogin = false
-                    loggedIn = true
-                } catch {
-                    needsLogin = true
-                    ready = false
-                    return
+            if needsLogin {
+                var pw = UserDefaults.standard.string(forKey: "webuiPassword") ?? ""
+                if pw.isEmpty { pw = WebUIKeychain.read() ?? "" }
+                if !pw.isEmpty {
+                    do {
+                        try await c.login(password: pw)
+                        needsLogin = false
+                        loggedIn = true
+                    } catch {
+                        needsLogin = true
+                        ready = false
+                        return
+                    }
                 }
             }
             if loggedIn || !needsLogin {
@@ -129,6 +133,7 @@ final class AppStore: ObservableObject {
         do {
             try await c.login(password: password)
             UserDefaults.standard.set(password, forKey: "webuiPassword")
+            WebUIKeychain.write(password)
             needsLogin = false
             loggedIn = true
             ready = true
