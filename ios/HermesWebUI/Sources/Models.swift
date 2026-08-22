@@ -183,7 +183,7 @@ struct SettingItem: Identifiable {
 }
 
 enum Panel: String, CaseIterable, Identifiable {
-    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, insights, logs, dashboard, settings
+    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, files, terminal, insights, logs, dashboard, settings
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -195,6 +195,8 @@ enum Panel: String, CaseIterable, Identifiable {
         case .spaces: return "Spaces"
         case .profiles: return "Profiles"
         case .todos: return "Todos"
+        case .files: return "Files"
+        case .terminal: return "Terminal"
         case .insights: return "Insights"
         case .logs: return "Logs"
         case .dashboard: return "Dashboard"
@@ -216,4 +218,18 @@ struct SessionLoad {
     var todos: [TodoItem]
     var truncated: Bool
     var activeStreamId: String
+}
+
+struct FsEntry: Identifiable {
+    var id: String { path }
+    var name: String
+    var path: String
+    var isDir: Bool
+    var size: Int
+}
+
+struct FileDoc {
+    var path: String
+    var content: String
+    var lines: Int
 }

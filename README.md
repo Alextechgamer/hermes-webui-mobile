@@ -9,20 +9,21 @@ This repo has **no personal data**. First launch asks for the WebUI URL.
 ## Panels (same rail as desktop WebUI)
 
 Chat · Tasks · Kanban · Skills · Memory · Spaces · Profiles · Todos ·
-Insights · Logs · **Dashboard** · Settings
+Files · Terminal · Insights · Logs · **Dashboard** · Settings
 
 Chat is a real conversation (sessions, stream tokens, stop, model chip,
-approvals / clarify). Other panels bind the same endpoints the desktop
-tabs use — not JSON dumps. See `docs/API.md`.
+approvals / clarify, dictate, speak, native Mermaid). Other panels bind the
+same endpoints the desktop tabs use — not JSON dumps. See `docs/API.md`.
 
 Dashboard talks to `/api/dashboard/status` + `/health` on WebUI, and
 optionally a separate dashboard URL (official Hermes Dashboard `:9119`
 or usage dashboard `:8790`).
 
-## Honest gaps
+## Honest leftover vs desktop
 
-Voice, Mermaid, the workspace editor, and the terminal pane stay on
-desktop WebUI. This client does not embed a WebView to fake them.
+Full mermaid.js, xterm.js, and the desktop workspace tree extras (git
+gutter, vscode reveal, office editors) are not cloned. Native Files +
+Terminal + Canvas mermaid + server STT/TTS cover the same jobs. No WebView.
 
 ## iOS without a Mac?
 
@@ -43,7 +44,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Enter `http://<host>:8787` then your WebUI password if auth is on.
 Optional dashboard URL: `http://<host>:9119`.
 
-Current debug build: **0.3.0**.
+Current debug build: **0.4.0**.
 
 ## License
 

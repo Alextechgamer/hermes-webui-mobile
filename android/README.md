@@ -13,4 +13,5 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 First launch: WebUI URL (placeholder `http://192.168.1.20:8787`). Then login if required.
 
 Panels: Chat, Tasks, Kanban, Skills, Memory, Spaces, Profiles, Todos,
-Insights, Logs, Dashboard, Settings.
+Files, Terminal, Insights, Logs, Dashboard, Settings.
+Dictate + speak + native Mermaid live in Chat.

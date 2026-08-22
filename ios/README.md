@@ -11,7 +11,8 @@ First launch: enter WebUI URL (placeholder `http://192.168.1.20:8787`). Then
 password if the server requires it.
 
 Panels: Chat, Tasks, Kanban, Skills, Memory, Spaces, Profiles, Todos,
-Insights, Logs, Dashboard, Settings.
+Files, Terminal, Insights, Logs, Dashboard, Settings.
+Dictate + speak + native Mermaid live in Chat.
 
 ATS: `NSAllowsArbitraryLoads` only (do not add `NSAllowsLocalNetworking`).
 

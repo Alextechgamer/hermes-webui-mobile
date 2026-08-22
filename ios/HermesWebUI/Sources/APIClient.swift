@@ -405,6 +405,97 @@ final class APIClient {
         _ = try? await postJSON("/api/settings", body: body)
     }
 
+    func listDir(sid: String, path: String) async throws -> (String, [FsEntry]) {
+        let o = try await dict("/api/list?session_id=\(q(sid))&path=\(q(path))")
+        let entries = (o["entries"] as? [[String: Any]] ?? []).compactMap { e -> FsEntry? in
+            let name = str(e, "name")
+            guard !name.isEmpty else { return nil }
+            let isDir = bool(e, "is_dir", false) || (e["type"] as? String) == "dir"
+            return FsEntry(name: name, path: first(e, "path") ?? name, isDir: isDir, size: int(e, "size"))
+        }.sorted { a, b in
+            if a.isDir != b.isDir { return a.isDir }
+            return a.name.lowercased() < b.name.lowercased()
+        }
+        return (o["workspace"] as? String ?? "", entries)
+    }
+
+    func readFile(sid: String, path: String) async throws -> FileDoc {
+        let o = try await dict("/api/file?session_id=\(q(sid))&path=\(q(path))")
+        return FileDoc(path: first(o, "path") ?? path, content: o["content"] as? String ?? "", lines: int(o, "lines"))
+    }
+
+    func saveFile(sid: String, path: String, content: String) async {
+        _ = try? await postJSON("/api/file/save", body: ["session_id": sid, "path": path, "content": content])
+    }
+
+    func startTerminal(sid: String) async throws {
+        let o = try await dictPost("/api/terminal/start", ["session_id": sid, "rows": 24, "cols": 80])
+        if let err = o["error"] as? String, !err.isEmpty { throw URLError(.cannotParseResponse) }
+    }
+
+    func terminalInput(sid: String, data: String) async {
+        _ = try? await postJSON("/api/terminal/input", body: ["session_id": sid, "data": data])
+    }
+
+    func closeTerminal(sid: String) async {
+        _ = try? await postJSON("/api/terminal/close", body: ["session_id": sid])
+    }
+
+    func streamTerminal(sid: String, onEvent: @escaping (String, String) -> Void) async {
+        let u = baseURL.appendingPathComponent("api/terminal/output")
+        var comp = URLComponents(url: u, resolvingAgainstBaseURL: false)!
+        comp.queryItems = [URLQueryItem(name: "session_id", value: sid)]
+        guard let url = comp.url else { return }
+        var req = URLRequest(url: url)
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        do {
+            let (bytes, _) = try await session.bytes(for: req)
+            var event = ""
+            for try await line in bytes.lines {
+                if line.hasPrefix("event:") {
+                    event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("data:") {
+                    onEvent(event, String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
+                } else if line.isEmpty {
+                    event = ""
+                }
+            }
+        } catch {}
+    }
+
+    func transcribe(fileURL: URL) async throws -> String {
+        var req = URLRequest(url: url("/api/transcribe"))
+        req.httpMethod = "POST"
+        let boundary = "Boundary-\(UUID().uuidString)"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if !csrf.isEmpty { req.setValue(csrf, forHTTPHeaderField: "X-Hermes-CSRF-Token") }
+        var data = Data()
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"file\"; filename=\"dictation.m4a\"\r\n".data(using: .utf8)!)
+        data.append("Content-Type: audio/mp4\r\n\r\n".data(using: .utf8)!)
+        data.append(try Data(contentsOf: fileURL))
+        data.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = data
+        let (resp, http) = try await session.data(for: req)
+        guard let r = http as? HTTPURLResponse, (200..<300).contains(r.statusCode) else { throw URLError(.badServerResponse) }
+        let obj = (try JSONSerialization.jsonObject(with: resp) as? [String: Any]) ?? [:]
+        if let err = obj["error"] as? String, !err.isEmpty { throw URLError(.cannotDecodeContentData) }
+        return (obj["transcript"] as? String) ?? (obj["text"] as? String) ?? ""
+    }
+
+    func tts(text: String) async throws -> Data {
+        try await postJSON("/api/tts", body: ["text": String(text.prefix(4000)), "engine": "edge"])
+    }
+
+    func transcribeAvailable() async -> Bool {
+        ((try? await dict("/api/transcribe/capability"))?["available"] as? Bool) ?? false
+    }
+
+    private func dictPost(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
+        let data = try await postJSON(path, body: body)
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     private func q(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s }
     private func str(_ d: [String: Any], _ keys: String...) -> String { first(d, keys) ?? "" }
     private func first(_ d: [String: Any], _ keys: String...) -> String? { first(d, keys) }

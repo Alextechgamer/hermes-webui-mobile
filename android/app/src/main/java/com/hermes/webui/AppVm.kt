@@ -55,10 +55,25 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val approval = mutableStateOf<Approval?>(null)
     val clarify = mutableStateOf<Clarify?>(null)
     val jobOutput = mutableStateOf("")
+    val fsPath = mutableStateOf(".")
+    val fsRoot = mutableStateOf("")
+    val fsEntries = mutableStateListOf<FsEntry>()
+    val fileDoc = mutableStateOf<FileDoc?>(null)
+    val fileDraft = mutableStateOf("")
+    val termText = mutableStateOf("")
+    val termRunning = mutableStateOf(false)
+    val speakReplies = mutableStateOf(false)
+    val listening = mutableStateOf(false)
+    val transcribing = mutableStateOf(false)
+    val voiceAvailable = mutableStateOf(false)
     var sid = ""
         private set
     private var es: EventSource? = null
+    private var termEs: EventSource? = null
     private var poll: Job? = null
+    private var player: android.media.MediaPlayer? = null
+    private var recorder: android.media.MediaRecorder? = null
+    private var recFile: java.io.File? = null
 
     fun reconnect() {
         val u = prefs.baseUrl
@@ -85,6 +100,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 refreshSessions()
                 loadModels()
                 startPoll()
+                voiceAvailable.value = withContext(Dispatchers.IO) { runCatching { c.transcribeAvailable() }.getOrDefault(false) }
             }
         } catch (e: Exception) {
             error.value = e.message
@@ -144,6 +160,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         profiles.clear(); profiles.addAll(list)
                     }
                     Panel.Todos -> if (sid.isNotBlank()) open(sid, keepPanel = true)
+                    Panel.Files -> loadFiles(fsPath.value)
+                    Panel.Terminal -> { }
                     Panel.Insights -> insights.value = withContext(Dispatchers.IO) { c.insights() }
                     Panel.Logs -> {
                         val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
@@ -426,9 +444,204 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     private fun flushLive() {
         if (live.value.isNotEmpty()) {
-            bubbles.add(ChatMsg("a-${System.currentTimeMillis()}", "assistant", live.value))
+            val text = live.value
+            bubbles.add(ChatMsg("a-${System.currentTimeMillis()}", "assistant", text))
             live.value = ""
+            if (speakReplies.value) speak(text)
         }
+    }
+
+    suspend fun ensureSid(): Boolean {
+        if (sid.isNotBlank()) return true
+        val c = api ?: return false
+        return try {
+            sid = withContext(Dispatchers.IO) { c.newSession() }
+            sid.isNotBlank()
+        } catch (e: Exception) {
+            error.value = e.message
+            false
+        }
+    }
+
+    fun loadFiles(path: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            if (!ensureSid()) {
+                error.value = "Open or create a chat first — Files uses that session workspace."
+                return@launch
+            }
+            try {
+                val (root, list) = withContext(Dispatchers.IO) { c.listDir(sid, path) }
+                fsRoot.value = root
+                fsPath.value = path
+                fsEntries.clear(); fsEntries.addAll(list)
+                fileDoc.value = null
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun openFs(entry: FsEntry) {
+        if (entry.isDir) loadFiles(entry.path) else openFile(entry.path)
+    }
+
+    fun fsUp() {
+        val p = fsPath.value
+        if (p.isBlank() || p == ".") return
+        val parent = p.trimEnd('/').substringBeforeLast('/', ".")
+        loadFiles(parent.ifBlank { "." })
+    }
+
+    fun openFile(path: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val doc = withContext(Dispatchers.IO) { c.readFile(sid, path) }
+                fileDoc.value = doc
+                fileDraft.value = doc.content
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun saveFile() {
+        val c = api ?: return
+        val path = fileDoc.value?.path ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.saveFile(sid, path, fileDraft.value) }
+                error.value = null
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun closeFile() { fileDoc.value = null }
+
+    fun startTerm() {
+        val c = api ?: return
+        viewModelScope.launch {
+            if (!ensureSid()) {
+                error.value = "Open or create a chat first — Terminal is bound to that session."
+                return@launch
+            }
+            try {
+                withContext(Dispatchers.IO) { c.startTerminal(sid) }
+                termRunning.value = true
+                termEs?.cancel()
+                termEs = c.streamTerminal(sid, { ev, data -> onTerm(ev, data) }, {
+                    viewModelScope.launch(Dispatchers.Main) { termRunning.value = false }
+                })
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun termType(line: String) {
+        val c = api ?: return
+        val payload = if (line.endsWith("\n")) line else "$line\n"
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.terminalInput(sid, payload) } }
+        }
+    }
+
+    fun stopTerm() {
+        val c = api ?: return
+        termEs?.cancel()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { c.closeTerminal(sid) }
+            termRunning.value = false
+        }
+    }
+
+    private fun onTerm(ev: String, data: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            val obj = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull()
+            val piece = obj?.prim("text") ?: ""
+            when (ev.lowercase()) {
+                "output" -> {
+                    if (piece.isNotEmpty()) {
+                        val next = stripAnsi(termText.value + piece)
+                        termText.value = if (next.length > 24000) next.takeLast(20000) else next
+                    }
+                }
+                "terminal_closed", "terminal_error" -> {
+                    if (ev.lowercase() == "terminal_error") error.value = obj?.prim("error") ?: "terminal error"
+                    termRunning.value = false
+                }
+            }
+        }
+    }
+
+    fun speak(text: String) {
+        val c = api ?: return
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { c.tts(clean) }
+                if (bytes.isEmpty()) return@launch
+                val f = java.io.File(getApplication<Application>().cacheDir, "hermes-tts.mp3")
+                withContext(Dispatchers.IO) { f.writeBytes(bytes) }
+                player?.release()
+                player = android.media.MediaPlayer().apply {
+                    setDataSource(f.absolutePath)
+                    prepare()
+                    start()
+                }
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun stopSpeak() {
+        runCatching { player?.stop() }
+        player?.release()
+        player = null
+    }
+
+    fun startListen() {
+        if (listening.value) return
+        val ctx = getApplication<Application>()
+        val f = java.io.File(ctx.cacheDir, "hermes-dictation.m4a")
+        recFile = f
+        try {
+            recorder = android.media.MediaRecorder().apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(16000)
+                setOutputFile(f.absolutePath)
+                prepare()
+                start()
+            }
+            listening.value = true
+        } catch (e: Exception) {
+            error.value = e.message ?: "Could not start microphone"
+            recorder?.release()
+            recorder = null
+        }
+    }
+
+    fun stopListen(onText: (String) -> Unit) {
+        val c = api ?: return
+        val f = recFile
+        listening.value = false
+        try { recorder?.stop() } catch (_: Exception) {}
+        recorder?.release()
+        recorder = null
+        if (f == null || !f.exists() || f.length() < 64) return
+        viewModelScope.launch {
+            transcribing.value = true
+            try {
+                val text = withContext(Dispatchers.IO) { c.transcribe(f) }
+                if (text.isNotBlank()) onText(text)
+            } catch (e: Exception) { error.value = e.message }
+            transcribing.value = false
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        es?.cancel()
+        termEs?.cancel()
+        stopSpeak()
+        runCatching { recorder?.release() }
     }
 
     private fun onSse(ev: String, data: String) {
@@ -471,6 +684,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 }
+
+private val ANSI = Regex("\\u001B\\[[0-9;?]*[A-Za-z]|\\u001B\\].*?(\\u0007|\\u001B\\\\)")
+
+private fun stripAnsi(s: String): String = ANSI.replace(s, "")
 
 private fun JsonObject.prim(vararg keys: String): String {
     for (k in keys) {

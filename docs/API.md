@@ -44,11 +44,25 @@ Auth is cookie + CSRF. No bearer token.
 | Profiles | `/api/profiles` `{profiles,active}` | `/api/profile/switch` `{name}` |
 | Todos | from session `todo_state` / last tool `{todos}` | — |
 | Insights | `/api/insights?days=30` | — |
+| Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
+| Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
 | Dashboard | `/health`, `/api/dashboard/status`, `/api/health/agent` | — |
 | Settings | `/api/settings`, `/api/models` | `POST /api/settings` |
 
+## Files / terminal / voice
+
+- List: `GET /api/list?session_id=&path=`
+- Read: `GET /api/file?session_id=&path=` → `{path,content,size,lines}`
+- Save: `POST /api/file/save` `{session_id,path,content}`
+- Terminal start: `POST /api/terminal/start` `{session_id,rows,cols}`
+- Terminal input: `POST /api/terminal/input` `{session_id,data}`
+- Terminal stream: `GET /api/terminal/output?session_id=` SSE `output` `{text}`
+- Dictate: `POST /api/transcribe` multipart `file` → `{transcript}`
+- Speak: `POST /api/tts` `{text,engine}` → audio bytes
+
 ## Honest gaps
 
-Voice, Mermaid, workspace editor, and terminal panes stay on desktop WebUI.
-No WebView is used to fake them.
+Mermaid is a **native subset** (flowchart / sequence / pie) drawn on Canvas —
+not mermaid.js. Terminal strips ANSI. Voice uses the server STT/TTS endpoints
+plus the device mic; it is not browser SpeechRecognition. No WebView.

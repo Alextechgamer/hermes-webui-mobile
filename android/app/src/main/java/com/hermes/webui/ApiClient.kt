@@ -18,8 +18,10 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
@@ -444,6 +446,86 @@ class ApiClient(base: String) {
             append('}')
         }
         postRaw("/api/settings", body)
+    }
+
+    fun listDir(sid: String, path: String): Pair<String, List<FsEntry>> {
+        val o = parse("/api/list?session_id=${enc(sid)}&path=${enc(path)}").asObj()
+        val entries = (o.arr("entries") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val e = el.asObjOrNull() ?: return@mapNotNull null
+            val name = e.str("name")
+            if (name.isBlank()) return@mapNotNull null
+            val isDir = e.bool("is_dir") || e.str("type") == "dir"
+            FsEntry(name, e.str("path").ifBlank { name }, isDir, e.int("size").toLong())
+        }.sortedWith(compareByDescending<FsEntry> { it.isDir }.thenBy { it.name.lowercase() })
+        return o.str("workspace") to entries
+    }
+
+    fun readFile(sid: String, path: String): FileDoc {
+        val o = parse("/api/file?session_id=${enc(sid)}&path=${enc(path)}").asObj()
+        return FileDoc(o.str("path").ifBlank { path }, o.str("content"), o.int("size"), o.int("lines"))
+    }
+
+    fun saveFile(sid: String, path: String, content: String) {
+        postRaw("/api/file/save", """{"session_id":${q(sid)},"path":${q(path)},"content":${q(content)}}""")
+    }
+
+    fun startTerminal(sid: String, rows: Int = 24, cols: Int = 80): String {
+        val o = json.parseToJsonElement(
+            postRaw("/api/terminal/start", """{"session_id":${q(sid)},"rows":$rows,"cols":$cols}"""),
+        ).asObj()
+        if (o.str("error").isNotBlank()) throw RuntimeException(o.str("error", "message"))
+        return o.str("workspace")
+    }
+
+    fun terminalInput(sid: String, data: String) {
+        postRaw("/api/terminal/input", """{"session_id":${q(sid)},"data":${q(data)}}""")
+    }
+
+    fun closeTerminal(sid: String) {
+        runCatching { postRaw("/api/terminal/close", """{"session_id":${q(sid)}}""") }
+    }
+
+    fun streamTerminal(sid: String, onEvent: (String, String) -> Unit, onClosed: () -> Unit): EventSource {
+        val r = Request.Builder()
+            .url("$root/api/terminal/output?session_id=${enc(sid)}")
+            .header("Accept", "text/event-stream")
+            .build()
+        return EventSources.createFactory(http).newEventSource(r, object : EventSourceListener() {
+            override fun onEvent(es: EventSource, id: String?, type: String?, data: String) {
+                onEvent(type ?: "", data)
+            }
+            override fun onClosed(es: EventSource) { onClosed() }
+            override fun onFailure(es: EventSource, t: Throwable?, resp: okhttp3.Response?) { onClosed() }
+        })
+    }
+
+    fun transcribe(file: java.io.File): String {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                file.name,
+                file.asRequestBody("audio/mp4".toMediaType()),
+            )
+            .build()
+        val b = Request.Builder().url("$root/api/transcribe")
+        if (csrf.isNotEmpty()) b.header("X-Hermes-CSRF-Token", csrf)
+        val o = json.parseToJsonElement(exec(b.post(body).build())).asObj()
+        if (o.str("error").isNotBlank()) throw RuntimeException(o.str("error"))
+        return o.str("transcript", "text")
+    }
+
+    fun tts(text: String, engine: String = "edge"): ByteArray {
+        val body = """{"text":${q(text.take(4000))},"engine":${q(engine)}}"""
+        http.newCall(req("POST", "/api/tts", body)).execute().use { resp ->
+            val bytes = resp.body?.bytes() ?: ByteArray(0)
+            if (resp.code == 401) throw AuthException()
+            if (!resp.isSuccessful) throw RuntimeException("HTTP ${resp.code}: ${String(bytes).take(200)}")
+            return bytes
+        }
+    }
+
+    fun transcribeAvailable(): Boolean {
+        return runCatching { parse("/api/transcribe/capability").asObj().bool("available") }.getOrDefault(false)
     }
 
     companion object {

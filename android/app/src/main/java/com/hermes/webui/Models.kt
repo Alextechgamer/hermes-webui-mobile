@@ -10,6 +10,8 @@ enum class Panel(val label: String) {
     Profiles("Profiles"),
     Todos("Todos"),
     Insights("Insights"),
+    Files("Files"),
+    Terminal("Terminal"),
     Logs("Logs"),
     Dashboard("Dashboard"),
     Settings("Settings"),
@@ -143,4 +145,18 @@ data class SessionLoad(
     val todos: List<TodoItem>,
     val truncated: Boolean,
     val activeStreamId: String,
+)
+
+data class FsEntry(
+    val name: String,
+    val path: String,
+    val isDir: Boolean,
+    val size: Long = 0,
+)
+
+data class FileDoc(
+    val path: String,
+    val content: String,
+    val size: Int = 0,
+    val lines: Int = 0,
 )

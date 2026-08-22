@@ -84,6 +84,8 @@ struct RootView: View {
                 case .spaces: SpacesPane(store: store)
                 case .profiles: ProfilesPane(store: store)
                 case .todos: TodosPane(store: store)
+                case .files: FilesPane(store: store)
+                case .terminal: TerminalPane(store: store)
                 case .insights: InsightsPane(store: store)
                 case .logs: LogsPane(store: store)
                 case .dashboard: DashboardPane(store: store)

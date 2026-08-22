@@ -201,6 +201,8 @@ fun PanelHost(vm: AppVm) {
         Panel.Spaces -> SpacesPane(vm)
         Panel.Profiles -> ProfilesPane(vm)
         Panel.Todos -> TodosPane(vm)
+        Panel.Files -> FilesPane(vm)
+        Panel.Terminal -> TerminalPane(vm)
         Panel.Insights -> InsightsPane(vm)
         Panel.Logs -> LogsPane(vm)
         Panel.Dashboard -> DashboardPane(vm)

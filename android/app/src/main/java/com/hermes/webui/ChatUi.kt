@@ -1,5 +1,7 @@
 package com.hermes.webui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,8 +20,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,8 +37,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 
 @Composable
 fun ChatPane(vm: AppVm) {
@@ -63,8 +71,8 @@ fun ChatPane(vm: AppVm) {
             state = list,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b -> BubbleView(b) }
-            if (vm.live.value.isNotEmpty()) item { BubbleView(ChatMsg("live", "assistant", vm.live.value)) }
+            itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b -> BubbleView(vm, b) }
+            if (vm.live.value.isNotEmpty()) item { BubbleView(vm, ChatMsg("live", "assistant", vm.live.value)) }
         }
         Composer(vm, draft, { draft = it }) {
             val t = draft
@@ -76,7 +84,21 @@ fun ChatPane(vm: AppVm) {
 
 @Composable
 private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend: () -> Unit) {
+    val ctx = LocalContext.current
+    val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.startListen() else vm.error.value = "Microphone permission denied"
+    }
     Column(Modifier.background(Wui.Sidebar)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
+            Text(
+                if (vm.speakReplies.value) "Speak replies on" else "Speak replies off",
+                color = if (vm.speakReplies.value) Wui.Accent else Wui.Muted,
+                fontSize = 11.sp,
+                modifier = Modifier.clickable { vm.speakReplies.value = !vm.speakReplies.value }.padding(6.dp),
+            )
+            if (vm.transcribing.value) Text("Transcribing…", color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(6.dp))
+            if (vm.listening.value) Text("Listening — tap mic to stop", color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(6.dp))
+        }
         if (vm.models.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 6.dp)) {
                 vm.models.take(16).forEach { m ->
@@ -102,7 +124,21 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 modifier = Modifier.weight(1f),
                 colors = fieldColors(),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
+            IconButton(onClick = {
+                if (vm.listening.value) {
+                    vm.stopListen { t -> onDraft(if (draft.isBlank()) t else "$draft $t") }
+                } else {
+                    val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    if (granted) vm.startListen() else mic.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }) {
+                Icon(
+                    if (vm.listening.value) Icons.Outlined.Stop else Icons.Outlined.Mic,
+                    "Dictate",
+                    tint = if (vm.listening.value) Wui.Danger else Wui.Accent,
+                )
+            }
             if (vm.busy.value) {
                 IconButton(onClick = { vm.stop() }) { Icon(Icons.Outlined.Stop, "Stop", tint = Wui.Accent) }
             } else {
@@ -160,8 +196,9 @@ private fun ClarifyBanner(q: Clarify, on: (String) -> Unit) {
 }
 
 @Composable
-private fun BubbleView(b: ChatMsg) {
+private fun BubbleView(vm: AppVm, b: ChatMsg) {
     val mine = b.role == "user"
+    val segs = remember(b.content) { splitChat(b.content) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier.widthIn(max = 340.dp)
@@ -169,8 +206,18 @@ private fun BubbleView(b: ChatMsg) {
                 .padding(10.dp),
         ) {
             if (b.tool.isNotBlank()) Text("⚙ ${b.tool}", color = if (mine) Wui.Bg else Wui.Accent, fontSize = 12.sp)
-            if (b.content.isNotEmpty()) {
-                Text(b.content, color = if (mine) Wui.Bg else if (b.role == "system") Wui.Muted else Wui.Text, fontSize = 14.sp)
+            segs.forEach { seg ->
+                when (seg) {
+                    is ChatSeg.Text -> if (seg.value.isNotBlank()) {
+                        Text(seg.value, color = if (mine) Wui.Bg else if (b.role == "system") Wui.Muted else Wui.Text, fontSize = 14.sp)
+                    }
+                    is ChatSeg.Mermaid -> MermaidBlock(seg.source, darkText = mine)
+                }
+            }
+            if (!mine && b.content.isNotBlank()) {
+                IconButton(onClick = { vm.speak(b.content) }) {
+                    Icon(Icons.Outlined.VolumeUp, "Speak", tint = Wui.Accent)
+                }
             }
         }
     }

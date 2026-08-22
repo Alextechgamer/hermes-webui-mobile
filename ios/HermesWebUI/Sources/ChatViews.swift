@@ -36,6 +36,14 @@ struct ChatPane: View {
 
     private var composer: some View {
         VStack(spacing: 0) {
+            HStack {
+                Button(store.speakReplies ? "Speak replies on" : "Speak replies off") {
+                    store.speakReplies.toggle()
+                }.font(.caption).foregroundColor(store.speakReplies ? Palette.accent : Palette.muted)
+                if store.listening { Text("Listening…").font(.caption).foregroundColor(Palette.accent) }
+                if store.transcribing { Text("Transcribing…").font(.caption).foregroundColor(Palette.accent) }
+                Spacer()
+            }.padding(.horizontal, 12).padding(.top, 6)
             if !store.models.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
@@ -58,6 +66,20 @@ struct ChatPane: View {
                     .background(Palette.surface)
                     .cornerRadius(10)
                     .foregroundColor(Palette.text)
+                Button {
+                    if store.listening {
+                        Task {
+                            let t = await store.stopListen()
+                            if !t.isEmpty { draft = draft.isEmpty ? t : draft + " " + t }
+                        }
+                    } else {
+                        store.startListen()
+                    }
+                } label: {
+                    Image(systemName: store.listening ? "stop.circle" : "mic.circle")
+                        .font(.system(size: 26))
+                        .foregroundColor(store.listening ? .red : Palette.accent)
+                }
                 Button {
                     let t = draft; draft = ""
                     Task { await store.send(t) }
@@ -84,8 +106,20 @@ struct ChatPane: View {
                 if let tool = m.tool_name ?? m.name, !tool.isEmpty {
                     Text("⚙ \(tool)").font(.caption).foregroundColor(Palette.accent)
                 }
-                if !m.content.isEmpty {
-                    Text(m.content).foregroundColor(mine ? .black : Palette.text)
+                ForEach(Array(splitChat(m.content).enumerated()), id: \.offset) { _, seg in
+                    switch seg {
+                    case .text(let t):
+                        if !t.isEmpty { Text(t).foregroundColor(mine ? .black : Palette.text) }
+                    case .mermaid(let src):
+                        MermaidBlock(source: src)
+                    }
+                }
+                if !mine && !m.content.isEmpty {
+                    Button {
+                        Task { await store.speak(m.content) }
+                    } label: {
+                        Image(systemName: "speaker.wave.2").foregroundColor(Palette.accent)
+                    }
                 }
             }
             .padding(10)
