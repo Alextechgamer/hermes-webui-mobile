@@ -400,23 +400,18 @@ final class APIClient {
         return o["lines"] as? [String] ?? []
     }
 
-    func dashboard() async -> [DashCard] {
-        var cards: [DashCard] = []
-        if let h = try? await dict("/health") {
-            cards.append(DashCard(title: "WebUI", value: (h["status"] as? String) ?? "ok", hint: "uptime \(fmtSec(h["uptime_seconds"]))"))
-            cards.append(DashCard(title: "Sessions", value: "\(h["sessions"] ?? 0)", hint: "\(h["active_streams"] ?? 0) streams · \(h["active_runs"] ?? 0) runs"))
-            if let runs = h["runs"] as? [[String: Any]], let r = runs.first {
-                cards.append(DashCard(title: "Live run", value: str(r, "model"), hint: [str(r, "provider"), str(r, "phase")].filter { !$0.isEmpty }.joined(separator: " · ")))
-            }
+    func consoleUsage(dashBase: String) async throws -> ConsoleUsage {
+        var s = dashBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasSuffix("/") { s.removeLast() }
+        if !s.contains("://") { s = "http://\(s)" }
+        guard let u = URL(string: s + "/api/usage") else { throw URLError(.badURL) }
+        var r = URLRequest(url: u)
+        r.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await session.data(for: r)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
         }
-        if let d = try? await dict("/api/dashboard/status") {
-            let running = bool(d, "running", false)
-            cards.append(DashCard(title: "Dashboard", value: running ? "running" : "off", hint: first(d, "url", "browser_url", "error", "enabled") ?? ""))
-        }
-        if let a = try? await dict("/api/health/agent") {
-            cards.append(DashCard(title: "Agent", value: first(a, "status", "state") ?? "ok", hint: first(a, "version", "message", "detail") ?? ""))
-        }
-        return cards
+        return try JSONDecoder().decode(ConsoleUsage.self, from: data)
     }
 
     func models() async -> [String] {

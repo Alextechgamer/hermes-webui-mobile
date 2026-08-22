@@ -50,6 +50,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val logLines = mutableStateListOf<String>()
     val logFile = mutableStateOf("agent")
     val dash = mutableStateListOf<DashCard>()
+    val console = mutableStateOf<ConsoleUsage?>(null)
+    val consoleError = mutableStateOf<String?>(null)
     val settingsItems = mutableStateListOf<SettingItem>()
     val settingEdits = mutableStateOf<Map<String, String>>(emptyMap())
     val approval = mutableStateOf<Approval?>(null)
@@ -219,10 +221,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
                         logLines.clear(); logLines.addAll(lines)
                     }
-                    Panel.Dashboard -> {
-                        val cards = withContext(Dispatchers.IO) { c.dashboard() }
-                        dash.clear(); dash.addAll(cards)
-                    }
+                    Panel.Dashboard -> loadConsole()
                     Panel.Settings -> {
                         val items = withContext(Dispatchers.IO) { c.settings() }
                         settingsItems.clear(); settingsItems.addAll(items)
@@ -537,12 +536,26 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         reconnect()
     }
 
+    fun loadConsole() {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val base = ConsoleFmt.consoleBase(prefs.baseUrl, prefs.dashboardUrl)
+                console.value = withContext(Dispatchers.IO) { c.consoleUsage(base) }
+                consoleError.value = null
+            } catch (e: Exception) {
+                consoleError.value = e.message ?: "Could not reach Hermes Console (:8790). Set the Console URL in Connection."
+            }
+        }
+    }
+
     private fun startPoll() {
         poll?.cancel()
         poll = viewModelScope.launch {
             while (isActive) {
                 delay(4000)
                 val c = api ?: continue
+                if (panel.value == Panel.Dashboard) loadConsole()
                 if (!ready.value || sid.isBlank()) continue
                 runCatching {
                     val a = withContext(Dispatchers.IO) { c.approval(sid) }

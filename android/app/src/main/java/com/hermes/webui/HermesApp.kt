@@ -120,7 +120,7 @@ fun HermesApp(vm: AppVm = viewModel()) {
                     Column {
                         OutlinedTextField(urlDraft, { urlDraft = it }, label = { Text("WebUI URL") }, placeholder = { Text("http://host:8787") }, colors = fieldColors())
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(dashDraft, { dashDraft = it }, label = { Text("Dashboard URL (optional)") }, placeholder = { Text("http://host:9119") }, colors = fieldColors())
+                        OutlinedTextField(dashDraft, { dashDraft = it }, label = { Text("Hermes Console URL (optional)") }, placeholder = { Text("http://host:8790") }, colors = fieldColors())
                     }
                 },
                 confirmButton = {
@@ -213,71 +213,78 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
                 ) {
                     Icon(p.icon(), p.label, tint = if (sel) Wui.Accent else Wui.Muted, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text(p.label, color = if (sel) Wui.Accent else Wui.Text, fontSize = 15.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
+                    Text(p.label, color = if (sel) Wui.Accent else Wui.Text, fontSize = 15.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.weight(1f))
+                    if (p == Panel.Chat) {
+                        Icon(Icons.Outlined.Add, "New conversation", tint = Wui.Accent, modifier = Modifier.size(18.dp).clickable { vm.newChat(); close() })
+                    }
                 }
-            }
-            Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Wui.Border))
-            Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("CONVERSATIONS", color = Wui.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, modifier = Modifier.weight(1f))
-                IconBtn(Icons.Outlined.Add, "New conversation", Wui.Accent) { vm.newChat(); close() }
-            }
-            Row(
-                Modifier
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .fillMaxWidth()
-                    .clip(WuiShapeMd)
-                    .background(Wui.InputBg)
-                    .border(1.dp, Wui.Border, WuiShapeMd)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.Search, null, tint = Wui.Muted, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                BasicTextField(
-                    value = vm.sessionQuery.value,
-                    onValueChange = { vm.sessionQuery.value = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = Wui.Text, fontSize = 13.sp),
-                    cursorBrush = SolidColor(Wui.Accent),
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { inner ->
-                        if (vm.sessionQuery.value.isEmpty()) Text("Filter conversations…", color = Wui.Muted, fontSize = 13.sp)
-                        inner()
-                    },
-                )
-            }
-            val q = vm.sessionQuery.value.trim().lowercase()
-            val shown = vm.sessions.filter {
-                q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
-            }
-            if (shown.isEmpty()) {
-                Text("No conversations yet.", color = Wui.Muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp))
-            }
-            shown.take(80).forEach { row ->
-                val active = row.sid == vm.sid
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                        .clip(WuiShapeMd)
-                        .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { vm.open(row); close() }
-                        .padding(10.dp, 10.dp),
-                ) {
-                    if (active) {
-                        Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(row.displayTitle, color = if (active) Wui.AccentText else Wui.Text, fontSize = 13.sp, maxLines = 2)
-                        Text(
-                            "${row.msgCount} messages" + (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
-                            color = Wui.Muted,
-                            fontSize = 11.sp,
-                        )
-                    }
+                if (p == Panel.Chat) {
+                    ConversationList(vm, close)
                 }
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ConversationList(vm: AppVm, close: () -> Unit) {
+    Column(Modifier.padding(start = 18.dp, end = 8.dp, bottom = 8.dp)) {
+        Row(
+            Modifier
+                .padding(vertical = 6.dp)
+                .fillMaxWidth()
+                .clip(WuiShapeMd)
+                .background(Wui.InputBg)
+                .border(1.dp, Wui.Border, WuiShapeMd)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Search, null, tint = Wui.Muted, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(8.dp))
+            BasicTextField(
+                value = vm.sessionQuery.value,
+                onValueChange = { vm.sessionQuery.value = it },
+                singleLine = true,
+                textStyle = TextStyle(color = Wui.Text, fontSize = 13.sp),
+                cursorBrush = SolidColor(Wui.Accent),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    if (vm.sessionQuery.value.isEmpty()) Text("Filter conversations…", color = Wui.Muted, fontSize = 13.sp)
+                    inner()
+                },
+            )
+        }
+        val q = vm.sessionQuery.value.trim().lowercase()
+        val shown = vm.sessions.filter {
+            q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
+        }
+        if (shown.isEmpty()) {
+            Text("No conversations yet.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp, 6.dp))
+        }
+        shown.take(80).forEach { row ->
+            val active = row.sid == vm.sid
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 1.dp)
+                    .clip(WuiShapeMd)
+                    .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable { vm.open(row); close() }
+                    .padding(10.dp, 8.dp),
+            ) {
+                if (active) {
+                    Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(row.displayTitle, color = if (active) Wui.AccentText else Wui.Text, fontSize = 13.sp, maxLines = 2)
+                    Text(
+                        "${row.msgCount} messages" + (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                        color = Wui.Muted,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
         }
     }
 }
@@ -312,7 +319,7 @@ private fun ConnectPane(url: String, onUrl: (String) -> Unit, dash: String, onDa
         Spacer(Modifier.height(20.dp))
         OutlinedTextField(url, onUrl, placeholder = { Text("http://host:8787", color = Wui.Muted) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(dash, onDash, placeholder = { Text("Dashboard http://host:9119 (optional)", color = Wui.Muted) }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
+        OutlinedTextField(dash, onDash, placeholder = { Text("Hermes Console http://host:8790 (optional)", color = Wui.Muted) }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), shape = WuiShapeMd)
         Spacer(Modifier.height(16.dp))
         Box(
             Modifier

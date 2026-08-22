@@ -263,23 +263,95 @@ struct LogsPane: View {
 struct DashboardPane: View {
     @ObservedObject var store: AppStore
     var body: some View {
+        let u = store.console
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Hermes Dashboard").font(.title2).foregroundColor(Palette.text)
-                Text("Live from this WebUI. Official dashboard is :9119; usage desk is :8790.")
-                    .font(.footnote).foregroundColor(Palette.muted)
-                ForEach(store.dash) { card in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(card.title).font(.caption).foregroundColor(Palette.muted)
-                        Text(card.value).font(.title3).foregroundColor(Palette.accent)
-                        if !card.hint.isEmpty { Text(card.hint).font(.footnote).foregroundColor(Palette.text) }
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("HERMES CONSOLE").font(.caption.bold()).foregroundColor(Palette.accent)
+                        Text(u.db_path.split(separator: "/").last.map(String.init) ?? "usage desk :8790")
+                            .font(.caption).foregroundColor(Palette.muted)
                     }
-                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Palette.surface).cornerRadius(12)
+                    Spacer()
+                    Text(u.connected ? "Connected" : "Offline").font(.caption).foregroundColor(u.connected ? Palette.accent : .red)
                 }
-                Button("Refresh") { Task { await store.loadPanel() } }.foregroundColor(Palette.accent)
+                if let e = store.consoleError { Text(e).font(.footnote).foregroundColor(.red) }
+                HStack {
+                    kpi("REQUESTS", ConsoleFmt.int(u.totals.requests))
+                    kpi("TOKENS", ConsoleFmt.tok(u.totals.tokens_total))
+                }
+                HStack {
+                    kpi("BURN MTD", ConsoleFmt.money(u.burn.mtd_spend))
+                    kpi("OUT-OF-POCKET", ConsoleFmt.money(u.subscriptions.actual_out_of_pocket_month))
+                }
+                card {
+                    Text("Live Usage").foregroundColor(Palette.text).bold()
+                    Text(u.inflight_basis).font(.caption).foregroundColor(Palette.muted)
+                    if u.inflight.isEmpty {
+                        Text("Idle — nothing in flight.").font(.footnote).foregroundColor(Palette.muted)
+                    } else {
+                        ForEach(u.inflight) { row in
+                            Text((row.model ?? "model") + " · " + (row.task ?? "chat")).foregroundColor(Palette.text)
+                            Text(row.session_short).font(.caption).foregroundColor(Palette.muted)
+                        }
+                    }
+                }
+                card {
+                    Text("Monthly Burn Rate").foregroundColor(Palette.text).bold()
+                    Text(ConsoleFmt.money(u.burn.mtd_spend)).font(.largeTitle.monospacedDigit()).foregroundColor(Palette.accent)
+                    Text("today \(ConsoleFmt.money(u.burn.today_spend)) · pace \(ConsoleFmt.money(u.burn.avg_daily_pace)) · EOM \(ConsoleFmt.money(u.burn.projected_eom))")
+                        .font(.caption).foregroundColor(Palette.muted)
+                }
+                card {
+                    Text("Real Cost vs Metered").foregroundColor(Palette.text).bold()
+                    Text(ConsoleFmt.money(u.subscriptions.actual_out_of_pocket_month)).font(.title.monospacedDigit()).foregroundColor(Palette.text)
+                    Text("flat \(ConsoleFmt.money(u.subscriptions.total_flat_monthly)) + payg \(ConsoleFmt.money(u.subscriptions.payg_metered_mtd))")
+                        .font(.caption).foregroundColor(Palette.muted)
+                    ForEach(u.subscriptions.items) { plan in
+                        HStack {
+                            Text(plan.name).foregroundColor(Palette.text)
+                            Spacer()
+                            Text(ConsoleFmt.money(plan.monthly_usd) + "/mo").foregroundColor(Palette.text)
+                        }
+                    }
+                }
+                card {
+                    Text("Usage Overview").foregroundColor(Palette.text).bold()
+                    Text("\(ConsoleFmt.int(u.totals.requests)) requests").font(.title2).foregroundColor(Palette.text)
+                    Text("\(ConsoleFmt.tok(u.totals.tokens_total)) tok · \(ConsoleFmt.money(u.totals.est_cost)) est")
+                        .font(.caption).foregroundColor(Palette.muted)
+                }
+                Text("Popular Models").foregroundColor(Palette.text).bold()
+                ForEach(u.models) { m in
+                    card {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(m.model).foregroundColor(Palette.text)
+                                Text(m.provider).font(.caption).foregroundColor(Palette.muted)
+                            }
+                            Spacer()
+                            Text("\(ConsoleFmt.int(m.requests)) req").foregroundColor(Palette.text)
+                        }
+                    }
+                }
+                Button("Refresh") { Task { await store.loadConsole() } }.foregroundColor(Palette.accent)
             }.padding(16)
         }
+    }
+
+    private func kpi(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(label).font(.caption2).foregroundColor(Palette.muted)
+            Text(value).font(.title3.monospacedDigit()).foregroundColor(Palette.text)
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.surface).cornerRadius(12)
+    }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6, content: content)
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surface).cornerRadius(12)
     }
 }
 

@@ -140,31 +140,27 @@ struct MenuSheet: View {
                 Section("Hermes WebUI") {
                     ForEach(Panel.allCases) { p in
                         Button(p.label) {
-                            show = false
+                            if p != .chat { show = false }
                             Task { await store.go(p) }
                         }
                         .foregroundColor(store.panel == p ? Palette.accent : Palette.text)
                         .listRowBackground(Palette.surface)
-                    }
-                }
-                Section("Conversations") {
-                    TextField("Search", text: $store.sessionQuery)
-                        .listRowBackground(Palette.surface)
-                    ForEach(filtered) { row in
-                        Button {
-                            show = false
-                            Task { await store.open(row) }
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(row.displayTitle).foregroundColor(row.sid == store.currentSid ? Palette.accent : Palette.text)
-                                Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+                        if p == .chat {
+                            TextField("Filter conversations…", text: $store.sessionQuery)
+                                .listRowBackground(Palette.surface)
+                            ForEach(filtered) { row in
+                                Button {
+                                    show = false
+                                    Task { await store.open(row) }
+                                } label: {
+                                    VStack(alignment: .leading) {
+                                        Text(row.displayTitle).foregroundColor(row.sid == store.currentSid ? Palette.accent : Palette.text)
+                                        Text("\(row.msgCount) messages").font(.caption).foregroundColor(Palette.muted)
+                                    }
+                                }
+                                .listRowBackground(Palette.surface)
                             }
                         }
-                        .listRowBackground(Palette.surface)
-                    }
-                    .onDelete { idx in
-                        let rows = filtered
-                        for i in idx { Task { await store.deleteSession(rows[i].sid) } }
                     }
                 }
             }

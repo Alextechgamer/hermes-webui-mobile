@@ -53,7 +53,7 @@ Auth is cookie + CSRF. No bearer token.
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
-| Dashboard | `/health`, `/api/dashboard/status`, `/api/health/agent` | — |
+| Dashboard | Hermes Console `GET :8790/api/usage` (derived from WebUI host, or Connection override) | — |
 | Settings | `/api/settings`, `/api/models` | `POST /api/settings` |
 
 ## Files / terminal / voice

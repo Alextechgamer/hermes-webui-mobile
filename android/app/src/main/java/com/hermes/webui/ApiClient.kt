@@ -412,40 +412,15 @@ class ApiClient(base: String) {
         return (o.arr("lines") ?: JsonArray(emptyList())).mapNotNull { it.primitiveOrNull() }
     }
 
-    fun dashboard(): List<DashCard> {
-        val cards = mutableListOf<DashCard>()
-        runCatching {
-            val h = parse("/health").asObj()
-            cards += DashCard("WebUI", h.str("status").ifBlank { "ok" }, "uptime ${fmtSec(h.double("uptime_seconds"))}")
-            cards += DashCard("Sessions", h.int("sessions").toString(), "${h.int("active_streams")} streams · ${h.int("active_runs")} runs")
-            val runs = h.arr("runs") ?: JsonArray(emptyList())
-            runs.firstOrNull()?.asObjOrNull()?.let { r ->
-                cards += DashCard(
-                    "Live run",
-                    r.str("model").ifBlank { "running" },
-                    listOf(r.str("provider"), r.str("phase"), "age ${fmtSec(r.double("age_seconds"))}")
-                        .filter { it.isNotBlank() }.joinToString(" · "),
-                )
-            }
+    fun consoleUsage(dashBase: String): ConsoleUsage {
+        val root = dashBase.trim().trimEnd('/')
+        if (root.isBlank()) throw IllegalStateException("Set the Hermes Console URL (:8790)")
+        val req = Request.Builder().url("$root/api/usage").header("Accept", "application/json").build()
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw RuntimeException("Console ${resp.code}")
+            return json.decodeFromString(ConsoleUsage.serializer(), body)
         }
-        runCatching {
-            val d = parse("/api/dashboard/status").asObj()
-            val running = d.bool("running")
-            cards += DashCard(
-                "Dashboard",
-                if (running) "running" else "off",
-                d.str("url", "browser_url", "error", "enabled"),
-            )
-        }
-        runCatching {
-            val a = parse("/api/health/agent").asObj()
-            cards += DashCard(
-                "Agent",
-                a.str("status", "state").ifBlank { if (a.bool("ok") || a.bool("healthy")) "ok" else "see detail" },
-                a.str("version", "message", "detail").take(160),
-            )
-        }
-        return cards
     }
 
     fun models(): List<String> {

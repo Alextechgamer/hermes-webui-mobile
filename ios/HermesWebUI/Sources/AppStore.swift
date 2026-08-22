@@ -32,6 +32,8 @@ final class AppStore: ObservableObject {
     @Published var logLines: [String] = []
     @Published var logFile = "agent"
     @Published var dash: [DashCard] = []
+    @Published var console = ConsoleUsage()
+    @Published var consoleError: String?
     @Published var settingsItems: [SettingItem] = []
     @Published var settingEdits: [String: String] = [:]
     @Published var approval: Approval?
@@ -114,6 +116,18 @@ final class AppStore: ObservableObject {
         await loadPanel()
     }
 
+    func loadConsole() async {
+        guard let c = client else { return }
+        let override = UserDefaults.standard.string(forKey: "dashboardURL") ?? ""
+        let base = ConsoleFmt.consoleBase(webui: c.baseURL.absoluteString, override: override)
+        do {
+            console = try await c.consoleUsage(dashBase: base)
+            consoleError = nil
+        } catch {
+            consoleError = error.localizedDescription
+        }
+    }
+
     func loadPanel() async {
         guard let c = client else { return }
         error = nil
@@ -135,7 +149,8 @@ final class AppStore: ObservableObject {
             case .terminal: break
             case .insights: insights = try await c.insights()
             case .logs: logLines = try await c.logs(file: logFile)
-            case .dashboard: dash = await c.dashboard()
+            case .dashboard:
+                await loadConsole()
             case .settings:
                 settingsItems = try await c.settings()
                 settingEdits = [:]

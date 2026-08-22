@@ -316,24 +316,6 @@ fun LogsPane(vm: AppVm) {
 }
 
 @Composable
-fun DashboardPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        ErrLine(vm)
-        Text("Hermes Dashboard", color = Wui.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Text("Live from this WebUI. Official dashboard is :9119; usage desk is :8790.", color = Wui.Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
-        if (vm.dash.isEmpty()) Text("No status yet.", color = Wui.Muted)
-        vm.dash.forEach { card ->
-            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp).background(Wui.Surface, RoundedCornerShape(12.dp)).padding(14.dp)) {
-                Text(card.title, color = Wui.Muted, fontSize = 12.sp)
-                Text(card.value, color = Wui.Accent, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                if (card.hint.isNotBlank()) Text(card.hint, color = Wui.Text, fontSize = 12.sp)
-            }
-        }
-        TextButton(onClick = { vm.loadPanel(Panel.Dashboard) }) { Text("Refresh", color = Wui.Accent) }
-    }
-}
-
-@Composable
 fun SettingsPane(vm: AppVm) {
     Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
