@@ -135,7 +135,17 @@ private fun WebTopbar(vm: AppVm, onMenu: () -> Unit, onConnect: () -> Unit) {
             .padding(horizontal = 6.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBtn(Icons.Outlined.Menu, "Menu", Wui.Text, onMenu)
+        Row(
+            Modifier
+                .clip(WuiShapeSm)
+                .clickable(onClick = onMenu)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Menu, "Menu", tint = Wui.Accent, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Menu", color = Wui.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
         Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
             Text(title, color = Wui.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, letterSpacing = (-0.15).sp)
             if (vm.panel.value == Panel.Chat && vm.busy.value) {
@@ -172,7 +182,7 @@ private fun IconBtn(icon: androidx.compose.ui.graphics.vector.ImageVector, label
 
 @Composable
 private fun DrawerBody(vm: AppVm, close: () -> Unit) {
-    Column(Modifier.fillMaxHeight().background(Wui.Sidebar)) {
+    Column(Modifier.fillMaxHeight().background(Wui.Sidebar).statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(16.dp, 18.dp, 8.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("HERMES", color = Wui.Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 1.6.sp)
@@ -180,36 +190,33 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
             }
             IconBtn(Icons.Outlined.Close, "Close menu", Wui.Muted, close)
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Text("MENU", color = Wui.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, modifier = Modifier.padding(16.dp, 10.dp, 16.dp, 4.dp))
             Panel.entries.forEach { p ->
                 val sel = vm.panel.value == p
-                Box(
+                Row(
                     Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 1.dp)
+                        .clip(WuiShapeMd)
                         .background(if (sel) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
-                        .border(1.dp, if (sel) Wui.AccentBgStrong else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(10.dp))
-                        .clickable { vm.go(p); if (p != Panel.Chat) close() },
-                    contentAlignment = Alignment.Center,
+                        .clickable {
+                            vm.go(p)
+                            if (p != Panel.Chat) close()
+                        }
+                        .padding(12.dp, 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(p.icon(), p.label, tint = if (sel) Wui.Accent else Wui.Muted, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(p.label, color = if (sel) Wui.Accent else Wui.Text, fontSize = 15.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Wui.Border))
-        Row(Modifier.fillMaxWidth().padding(16.dp, 12.dp, 12.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(vm.panel.value.label, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            if (vm.panel.value == Panel.Chat) {
+            Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Wui.Border))
+            Row(Modifier.fillMaxWidth().padding(16.dp, 4.dp, 8.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("CONVERSATIONS", color = Wui.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, modifier = Modifier.weight(1f))
                 IconBtn(Icons.Outlined.Add, "New conversation", Wui.Accent) { vm.newChat(); close() }
             }
-        }
-        if (vm.panel.value == Panel.Chat) {
             Row(
                 Modifier
                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -235,49 +242,38 @@ private fun DrawerBody(vm: AppVm, close: () -> Unit) {
                     },
                 )
             }
-        }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            if (vm.panel.value == Panel.Chat) {
-                val q = vm.sessionQuery.value.trim().lowercase()
-                val shown = vm.sessions.filter {
-                    q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
-                }
-                if (shown.isEmpty()) {
-                    Text("No conversations yet.", color = Wui.Muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp))
-                }
-                shown.take(80).forEach { row ->
-                    val active = row.sid == vm.sid
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                            .clip(WuiShapeMd)
-                            .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
-                            .clickable { vm.open(row); close() }
-                            .padding(10.dp, 10.dp),
-                    ) {
-                        if (active) {
-                            Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(row.displayTitle, color = if (active) Wui.AccentText else Wui.Text, fontSize = 13.sp, maxLines = 2)
-                            Text(
-                                "${row.msgCount} messages" + (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
-                                color = Wui.Muted,
-                                fontSize = 11.sp,
-                            )
-                        }
+            val q = vm.sessionQuery.value.trim().lowercase()
+            val shown = vm.sessions.filter {
+                q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
+            }
+            if (shown.isEmpty()) {
+                Text("No conversations yet.", color = Wui.Muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp))
+            }
+            shown.take(80).forEach { row ->
+                val active = row.sid == vm.sid
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .clip(WuiShapeMd)
+                        .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable { vm.open(row); close() }
+                        .padding(10.dp, 10.dp),
+                ) {
+                    if (active) {
+                        Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(row.displayTitle, color = if (active) Wui.AccentText else Wui.Text, fontSize = 13.sp, maxLines = 2)
+                        Text(
+                            "${row.msgCount} messages" + (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                            color = Wui.Muted,
+                            fontSize = 11.sp,
+                        )
                     }
                 }
-                Spacer(Modifier.height(24.dp))
-            } else {
-                Text(
-                    "Open ${vm.panel.value.label} — same panel as desktop WebUI.",
-                    color = Wui.Muted,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(20.dp),
-                )
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
