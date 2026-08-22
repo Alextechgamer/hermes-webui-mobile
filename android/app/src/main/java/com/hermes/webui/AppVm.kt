@@ -40,6 +40,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val truncated = mutableStateOf(false)
     val models = mutableStateListOf<ModelOption>()
     val selectedModel = mutableStateOf("")
+    val reasoning = mutableStateOf(ReasoningStatus())
     val jobs = mutableStateListOf<CronJob>()
     val columns = mutableStateListOf<KanbanColumn>()
     val skills = mutableStateListOf<SkillRow>()
@@ -306,10 +307,38 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
             models.clear(); models.addAll(list)
             if (selectedModel.value.isBlank() && default.isNotBlank()) selectedModel.value = default
+            loadReasoning()
         }
         viewModelScope.launch {
             val list = withContext(Dispatchers.IO) { runCatching { c.prompts() }.getOrDefault(emptyList()) }
             prompts.clear(); prompts.addAll(list)
+        }
+    }
+
+    fun pickModel(id: String) {
+        selectedModel.value = id
+        loadReasoning()
+    }
+
+    fun setReasoning(effort: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val model = selectedModel.value
+            val provider = models.firstOrNull { it.id == model }?.provider.orEmpty()
+            reasoning.value = withContext(Dispatchers.IO) {
+                runCatching { c.setReasoning(effort, model, provider) }.getOrDefault(ReasoningStatus(effort = effort))
+            }
+        }
+    }
+
+    fun loadReasoning() {
+        val c = api ?: return
+        val model = selectedModel.value
+        val provider = models.firstOrNull { it.id == model }?.provider.orEmpty()
+        viewModelScope.launch {
+            reasoning.value = withContext(Dispatchers.IO) {
+                runCatching { c.reasoning(model, provider) }.getOrDefault(ReasoningStatus())
+            }
         }
     }
 
@@ -333,6 +362,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private fun applyLoad(load: SessionLoad) {
         if (load.title.isNotBlank()) title.value = load.title
         if (load.model.isNotBlank() && selectedModel.value.isBlank()) selectedModel.value = load.model
+        if (load.model.isNotBlank()) loadReasoning()
         truncated.value = load.truncated
         val steers = bubbles.filter { it.role == "steer" }
         bubbles.clear()

@@ -22,6 +22,7 @@ final class AppStore: ObservableObject {
     @Published var truncated = false
     @Published var models: [ModelOption] = []
     @Published var selectedModel = ""
+    @Published var reasoning = ReasoningStatus()
     @Published var jobs: [CronJob] = []
     @Published var columns: [KanbanColumn] = []
     @Published var skills: [SkillRow] = []
@@ -155,12 +156,30 @@ final class AppStore: ObservableObject {
         let r = await c.models()
         models = r.1
         if selectedModel.isEmpty, !r.0.isEmpty { selectedModel = r.0 }
+        await loadReasoning()
         prompts = (try? await c.prompts()) ?? []
         if let pr = try? await c.profiles() {
             activeProfile = pr.0
             profiles = pr.1
         }
         spaces = (try? await c.spaces()) ?? []
+    }
+
+    func pickModel(_ id: String) {
+        selectedModel = id
+        Task { await loadReasoning() }
+    }
+
+    func setReasoning(_ effort: String) async {
+        guard let c = client else { return }
+        let provider = models.first(where: { $0.id == selectedModel })?.provider ?? ""
+        reasoning = await c.setReasoning(effort: effort, model: selectedModel, provider: provider)
+    }
+
+    func loadReasoning() async {
+        guard let c = client else { return }
+        let provider = models.first(where: { $0.id == selectedModel })?.provider ?? ""
+        reasoning = await c.reasoning(model: selectedModel, provider: provider)
     }
 
     func go(_ p: Panel) async {
@@ -273,6 +292,7 @@ final class AppStore: ObservableObject {
     private func apply(_ load: SessionLoad) {
         if !load.title.isEmpty { title = load.title }
         if !load.model.isEmpty && selectedModel.isEmpty { selectedModel = load.model }
+        if !load.model.isEmpty { Task { await loadReasoning() } }
         truncated = load.truncated
         let incoming = load.messages.filter { ["user", "assistant", "tool", "thinking", "system"].contains($0.role) }
         let steers = messages.filter { $0.role == "steer" }

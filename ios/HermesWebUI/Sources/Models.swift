@@ -298,6 +298,44 @@ struct ModelOption: Identifiable, Hashable {
     var provider: String
 }
 
+struct ReasoningStatus {
+    var effort: String = ""
+    var supported: [String] = []
+    var showToggle: Bool = true
+
+    var label: String { ReasoningStatus.label(for: effort) }
+
+    func options() -> [(String, String)] {
+        let ladder: [(String, String)] = [
+            ("", "Default"),
+            ("none", "None"),
+            ("minimal", "Minimal"),
+            ("low", "Low"),
+            ("medium", "Medium"),
+            ("high", "High"),
+            ("xhigh", "Extra High"),
+            ("max", "Max"),
+        ]
+        if supported.isEmpty { return ladder }
+        let allowed = Set(["", "none"] + supported)
+        return ladder.filter { allowed.contains($0.0) }
+    }
+
+    static func label(for effort: String) -> String {
+        switch effort.lowercased() {
+        case "", "default": return "Default"
+        case "none": return "None"
+        case "minimal": return "Minimal"
+        case "low": return "Low"
+        case "medium": return "Medium"
+        case "high": return "High"
+        case "xhigh": return "Extra High"
+        case "max": return "Max"
+        default: return effort.capitalized
+        }
+    }
+}
+
 struct SavedPrompt: Identifiable {
     var id: String
     var label: String

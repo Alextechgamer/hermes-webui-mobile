@@ -598,6 +598,36 @@ class ApiClient(base: String, prefs: Prefs) {
         return default to out.values.toList()
     }
 
+    fun reasoning(model: String, provider: String): ReasoningStatus {
+        val qs = buildString {
+            append("/api/reasoning")
+            val parts = mutableListOf<String>()
+            if (model.isNotBlank()) parts += "model=${enc(model)}"
+            if (provider.isNotBlank()) parts += "provider=${enc(provider)}"
+            if (parts.isNotEmpty()) append("?").append(parts.joinToString("&"))
+        }
+        return parseReasoning(parse(qs).asObj())
+    }
+
+    fun setReasoning(effort: String, model: String, provider: String): ReasoningStatus {
+        val parts = mutableListOf("\"effort\":${q(effort)}")
+        if (model.isNotBlank()) parts += "\"model\":${q(model)}"
+        if (provider.isNotBlank()) parts += "\"provider\":${q(provider)}"
+        val el = json.parseToJsonElement(exec(req("POST", "/api/reasoning", "{" + parts.joinToString(",") + "}"))).asObj()
+        return parseReasoning(el)
+    }
+
+    private fun parseReasoning(o: JsonObject): ReasoningStatus {
+        val efforts = (o.arr("supported_efforts") ?: JsonArray(emptyList())).mapNotNull { el ->
+            (el as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+        }
+        return ReasoningStatus(
+            effort = o.str("reasoning_effort", "effort"),
+            supported = efforts,
+            showToggle = o.bool("supports_thinking_toggle", true) || efforts.isNotEmpty(),
+        )
+    }
+
     fun settings(): List<SettingItem> {
         val el = parse("/api/settings")
         val obj = when {

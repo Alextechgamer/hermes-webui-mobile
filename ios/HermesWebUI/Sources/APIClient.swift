@@ -613,6 +613,39 @@ final class APIClient {
         return (defaultModel, Array(out.values))
     }
 
+    func reasoning(model: String, provider: String) async -> ReasoningStatus {
+        var parts: [String] = []
+        if !model.isEmpty { parts.append("model=\(model.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? model)") }
+        if !provider.isEmpty { parts.append("provider=\(provider.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? provider)") }
+        let qs = parts.isEmpty ? "/api/reasoning" : "/api/reasoning?" + parts.joined(separator: "&")
+        guard let data = try? await getData(qs),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ReasoningStatus()
+        }
+        return parseReasoning(obj)
+    }
+
+    func setReasoning(effort: String, model: String, provider: String) async -> ReasoningStatus {
+        var body: [String: Any] = ["effort": effort]
+        if !model.isEmpty { body["model"] = model }
+        if !provider.isEmpty { body["provider"] = provider }
+        guard let data = try? await postJSON("/api/reasoning", body: body),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ReasoningStatus(effort: effort)
+        }
+        return parseReasoning(obj)
+    }
+
+    private func parseReasoning(_ obj: [String: Any]) -> ReasoningStatus {
+        let efforts = (obj["supported_efforts"] as? [Any])?.compactMap { $0 as? String } ?? []
+        let toggle = (obj["supports_thinking_toggle"] as? Bool) ?? true
+        return ReasoningStatus(
+            effort: first(obj, "reasoning_effort", "effort") ?? "",
+            supported: efforts,
+            showToggle: toggle || !efforts.isEmpty
+        )
+    }
+
     func settings() async throws -> [SettingItem] {
         let data = try await getData("/api/settings")
         let root = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]

@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -49,9 +50,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,53 +62,102 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChatPane(vm: AppVm) {
     var draft by remember { mutableStateOf("") }
     val list = rememberLazyListState()
-    LaunchedEffect(vm.bubbles.size, vm.live.value.length) {
-        val last = vm.bubbles.size + if (vm.live.value.isNotEmpty()) 1 else 0
-        if (last > 0) runCatching { list.animateScrollToItem(last) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    val firstId = vm.bubbles.firstOrNull()?.id.orEmpty()
+    val lastId = vm.bubbles.lastOrNull()?.id.orEmpty()
+    val count = vm.bubbles.size
+    val liveLen = vm.live.value.length
+    val atBottom by remember {
+        derivedStateOf {
+            val info = list.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount == 0 || lastVisible >= info.totalItemsCount - 2
+        }
+    }
+    suspend fun jumpLatest() {
+        val idx = (list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+        runCatching { list.scrollToItem(idx) }
+    }
+    LaunchedEffect(firstId, lastId, count) {
+        kotlinx.coroutines.yield()
+        jumpLatest()
+        kotlinx.coroutines.delay(48)
+        jumpLatest()
+    }
+    LaunchedEffect(liveLen) {
+        if (liveLen > 0 && atBottom) jumpLatest()
     }
     Column(Modifier.fillMaxSize().background(Wui.Bg).imePadding()) {
         ErrLine(vm)
         vm.approval.value?.let { ApprovalBanner(it, vm::approve) }
         vm.clarify.value?.let { ClarifyBanner(it, vm::answerClarify) }
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-            state = list,
-        ) {
-            if (vm.truncated.value) {
-                item {
-                    Text(
-                        "Load full history",
-                        color = Wui.Muted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).clickable { vm.loadFullHistory() },
-                    )
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                state = list,
+            ) {
+                if (vm.truncated.value) {
+                    item {
+                        Text(
+                            "Load full history",
+                            color = Wui.Muted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).clickable { vm.loadFullHistory() },
+                        )
+                    }
+                }
+                if (vm.bubbles.isEmpty() && vm.live.value.isEmpty()) {
+                    item { EmptyChat() }
+                }
+                itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b ->
+                    MessageRow(vm, b)
+                }
+                if (vm.live.value.isNotEmpty()) {
+                    item { MessageRow(vm, ChatMsg("live", "assistant", vm.live.value), live = true) }
+                }
+                item { Spacer(Modifier.height(12.dp)) }
+            }
+            if (!atBottom && count > 0) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Wui.Surface)
+                        .border(1.dp, Wui.Accent, CircleShape)
+                        .clickable {
+                            scope.launch {
+                                jumpLatest()
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.ArrowDownward, "Latest message", tint = Wui.Accent, modifier = Modifier.size(18.dp))
                 }
             }
-            if (vm.bubbles.isEmpty() && vm.live.value.isEmpty()) {
-                item { EmptyChat() }
-            }
-            itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b ->
-                MessageRow(vm, b)
-            }
-            if (vm.live.value.isNotEmpty()) {
-                item { MessageRow(vm, ChatMsg("live", "assistant", vm.live.value), live = true) }
-            }
-            item { Spacer(Modifier.height(12.dp)) }
         }
         Composer(vm, draft, { draft = it }) {
             val t = draft
             draft = ""
+            keyboard?.hide()
+            focus.clearFocus()
             vm.send(t)
         }
     }
@@ -300,6 +352,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
     var showPrompts by remember { mutableStateOf(false) }
     var showProfiles by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
+    var showReasoning by remember { mutableStateOf(false) }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.attachUris(ctx, uris)
     }
@@ -327,8 +380,14 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
         }
         if (showModels && vm.models.isNotEmpty()) {
             ModelPicker(vm.models, vm.selectedModel.value) { m ->
-                vm.selectedModel.value = m
+                vm.pickModel(m)
                 showModels = false
+            }
+        }
+        if (showReasoning) {
+            ChipMenu(vm.reasoning.value.options().map { it.second to it.first }) { effort ->
+                vm.setReasoning(effort)
+                showReasoning = false
             }
         }
         if (vm.pendingAttach.isNotEmpty()) {
@@ -392,6 +451,12 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 FooterChip(Icons.Outlined.Person, profile) { showProfiles = !showProfiles }
                 FooterChip(Icons.Outlined.Folder, workspace) { vm.go(Panel.Files) }
                 if (model.isNotBlank()) FooterChip(Icons.Outlined.Memory, model.take(22)) { showModels = !showModels }
+                FooterChip(Icons.Outlined.Lightbulb, "Reason ${vm.reasoning.value.label()}") {
+                    showReasoning = !showReasoning
+                    showModels = false
+                    showPrompts = false
+                    showProfiles = false
+                }
                 Spacer(Modifier.width(8.dp))
                 if (vm.busy.value) {
                     Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)

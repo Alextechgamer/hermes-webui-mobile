@@ -18,6 +18,8 @@ Auth is cookie + CSRF. No bearer token.
   - huge sidecars auto-tail unless `full=1`
   - `_messages_truncated` / `todo_state` may be present
 - `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`)
+- `GET /api/reasoning?model=&provider=` → `{reasoning_effort, supported_efforts, supports_thinking_toggle}`
+- `POST /api/reasoning` `{effort, model?, provider?}` — same keys as desktop composer
 - `GET /api/chat/stream?stream_id=` SSE event `token` `{text}`
   - reconnect with `replay=1&after_seq=&after_event_id=` — do **not** treat socket close as cancel
 - `GET /api/chat/stream/status?stream_id=` → `{active}`

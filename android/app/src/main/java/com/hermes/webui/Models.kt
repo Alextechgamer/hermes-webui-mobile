@@ -67,6 +67,44 @@ data class ModelOption(
     val provider: String,
 )
 
+data class ReasoningStatus(
+    val effort: String = "",
+    val supported: List<String> = emptyList(),
+    val showToggle: Boolean = true,
+) {
+    fun label(): String = reasoningLabel(effort)
+    fun options(): List<Pair<String, String>> {
+        val ladder = listOf(
+            "" to "Default",
+            "none" to "None",
+            "minimal" to "Minimal",
+            "low" to "Low",
+            "medium" to "Medium",
+            "high" to "High",
+            "xhigh" to "Extra High",
+            "max" to "Max",
+        )
+        val allowed = if (supported.isEmpty()) {
+            ladder.map { it.first }.toSet()
+        } else {
+            setOf("", "none") + supported
+        }
+        return ladder.filter { it.first in allowed }
+    }
+}
+
+fun reasoningLabel(effort: String): String = when (effort.lowercase()) {
+    "", "default" -> "Default"
+    "none" -> "None"
+    "minimal" -> "Minimal"
+    "low" -> "Low"
+    "medium" -> "Medium"
+    "high" -> "High"
+    "xhigh" -> "Extra High"
+    "max" -> "Max"
+    else -> effort.replaceFirstChar { it.uppercase() }
+}
+
 data class SessionRow(
     val sid: String,
     val title: String,

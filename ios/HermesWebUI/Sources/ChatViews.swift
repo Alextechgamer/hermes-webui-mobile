@@ -9,6 +9,7 @@ struct ChatPane: View {
     @State private var showPrompts = false
     @State private var showModels = false
     @State private var showProfiles = false
+    @State private var showReasoning = false
     @State private var modelQuery = ""
     @State private var pickingFiles = false
     @State private var pickingPhotos = false
@@ -24,8 +25,9 @@ struct ChatPane: View {
                 ClarifyBanner(q: q) { reply in Task { await store.answerClarify(reply) } }
             }
             ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
                         if store.truncated {
                             Button("Load full history") { Task { await store.loadFullHistory() } }
                                 .font(.system(size: 12))
@@ -72,9 +74,24 @@ struct ChatPane: View {
                         Color.clear.frame(height: 12).id("bottom")
                     }
                     .padding(.horizontal, 16)
+                    }
+                    .onAppear { jumpToLatest(proxy) }
+                    .onChange(of: store.liveText) { _ in jumpToLatest(proxy) }
+                    .onChange(of: store.messages.count) { _ in jumpToLatest(proxy) }
+                    .onChange(of: store.messages.last?.id) { _ in jumpToLatest(proxy) }
+                    if !store.messages.isEmpty {
+                        Button { jumpToLatest(proxy) } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Palette.accent)
+                                .frame(width: 40, height: 40)
+                                .background(Palette.surface)
+                                .overlay(Circle().stroke(Palette.accent, lineWidth: 1))
+                                .clipShape(Circle())
+                        }
+                        .padding(12)
+                    }
                 }
-                .onChange(of: store.liveText) { _ in proxy.scrollTo("bottom", anchor: .bottom) }
-                .onChange(of: store.messages.count) { _ in proxy.scrollTo("bottom", anchor: .bottom) }
             }
             composer
         }
@@ -98,6 +115,17 @@ struct ChatPane: View {
                 }
                 await MainActor.run { photoItems = [] }
             }
+        }
+    }
+
+    private func jumpToLatest(_ proxy: ScrollViewProxy) {
+        let target = store.liveText.isEmpty ? (store.messages.last?.id ?? "bottom") : "bottom"
+        DispatchQueue.main.async {
+            withAnimation(.none) { proxy.scrollTo("bottom", anchor: .bottom) }
+            proxy.scrollTo(target, anchor: .bottom)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 
@@ -144,8 +172,14 @@ struct ChatPane: View {
             }
             if showModels && !store.models.isEmpty {
                 ModelPicker(options: store.models, selected: store.selectedModel, query: $modelQuery) { m in
-                    store.selectedModel = m
+                    store.pickModel(m)
                     showModels = false
+                }
+            }
+            if showReasoning {
+                ChipMenu(items: store.reasoning.options().map { ($0.1, $0.0) }) { effort in
+                    Task { await store.setReasoning(effort) }
+                    showReasoning = false
                 }
             }
             if !store.pendingAttach.isEmpty {
@@ -213,8 +247,11 @@ struct ChatPane: View {
                         }
                         if !model.isEmpty {
                             FooterChip(symbol: "cpu", label: String(model.prefix(22))) {
-                                showModels.toggle(); showPrompts = false; showProfiles = false
+                                showModels.toggle(); showPrompts = false; showProfiles = false; showReasoning = false
                             }
+                        }
+                        FooterChip(symbol: "lightbulb", label: "Reason \(store.reasoning.label)") {
+                            showReasoning.toggle(); showModels = false; showPrompts = false; showProfiles = false
                         }
                         Spacer(minLength: 8)
                         if store.busy {
@@ -226,6 +263,7 @@ struct ChatPane: View {
                         Button {
                             let t = draft
                             draft = ""
+                            focused = false
                             Task { await store.send(t) }
                         } label: {
                             Image(systemName: "arrow.up")
