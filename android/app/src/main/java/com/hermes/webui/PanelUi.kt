@@ -47,7 +47,7 @@ private val KANBAN_NEXT = mapOf(
 @Composable
 fun TasksPane(vm: AppVm) {
     var openId by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Scheduled jobs — same /api/crons as the desktop Tasks tab")
         LazyColumn(Modifier.fillMaxSize()) {
@@ -87,7 +87,7 @@ fun TasksPane(vm: AppVm) {
 
 @Composable
 fun KanbanPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Board columns — tap a card to advance status")
         Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -123,7 +123,7 @@ fun KanbanPane(vm: AppVm) {
 @Composable
 fun SkillsPane(vm: AppVm) {
     var open by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Installed skills — toggle writes the active profile")
         LazyColumn(Modifier.fillMaxSize()) {
@@ -166,7 +166,7 @@ fun MemoryPane(vm: AppVm) {
         else -> doc.memory
     }
     var draft by remember(tab, text) { mutableStateOf(text) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("memory" to "MEMORY", "user" to "USER", "soul" to "SOUL", "project" to (doc.projectName.ifBlank { "Project" })).forEach { (k, label) ->
@@ -196,7 +196,7 @@ fun MemoryPane(vm: AppVm) {
 
 @Composable
 fun SpacesPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Workspaces known to this WebUI")
         LazyColumn {
@@ -214,7 +214,7 @@ fun SpacesPane(vm: AppVm) {
 
 @Composable
 fun ProfilesPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Active profile: ${vm.activeProfile.value.ifBlank { "default" }}")
         LazyColumn {
@@ -238,7 +238,7 @@ fun ProfilesPane(vm: AppVm) {
 
 @Composable
 fun TodosPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("Current task list from this conversation (todo tool / SSE)")
         LazyColumn {
@@ -294,7 +294,7 @@ fun InsightsPane(vm: AppVm) {
 
 @Composable
 fun LogsPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("agent", "errors", "gateway").forEach { f ->
@@ -335,7 +335,7 @@ fun DashboardPane(vm: AppVm) {
 
 @Composable
 fun SettingsPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         SectionLabel("WebUI settings — same keys as Control Center. Secrets are hidden.")
         if (vm.models.isNotEmpty()) {
