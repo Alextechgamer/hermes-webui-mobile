@@ -12,12 +12,14 @@ data class ConsoleUsage(
     val notes: List<String> = emptyList(),
     val totals: ConsoleTotals = ConsoleTotals(),
     val burn: ConsoleBurn = ConsoleBurn(),
+    val by_provider: List<ConsoleProvider> = emptyList(),
     val models: List<ConsoleModel> = emptyList(),
     val feed: List<ConsoleFeed> = emptyList(),
+    val spend_by_day: List<ConsoleDay> = emptyList(),
     val inflight: List<ConsoleInflight> = emptyList(),
     val inflight_basis: String = "",
     val subscriptions: ConsoleSubs = ConsoleSubs(),
-    val sessions: List<ConsoleSessionHint> = emptyList(),
+    val sessions: List<ConsoleSession> = emptyList(),
 )
 
 @Serializable
@@ -51,8 +53,16 @@ data class CostModelRate(
 @Serializable
 data class ConsoleTotals(
     val requests: Long = 0,
+    val buckets: Long = 0,
+    val input_tokens: Long = 0,
+    val output_tokens: Long = 0,
+    val cache_read_tokens: Long = 0,
+    val cache_write_tokens: Long = 0,
+    val reasoning_tokens: Long = 0,
     val tokens_total: Long = 0,
+    val prompt_tokens: Long = 0,
     val est_cost: Double = 0.0,
+    val act_cost: Double = 0.0,
     val sessions: Long = 0,
     val cost_basis: String = "estimated",
 )
@@ -60,13 +70,26 @@ data class ConsoleTotals(
 @Serializable
 data class ConsoleBurn(
     val mtd_spend: Double = 0.0,
+    val mtd_actual: Double = 0.0,
     val today_spend: Double = 0.0,
     val avg_daily_pace: Double = 0.0,
     val projected_eom: Double = 0.0,
     val day_of_month: Int = 0,
     val days_in_month: Int = 0,
     val month_label: String = "",
+    val monthly_cap: Double? = null,
     val cost_basis: String = "estimated",
+)
+
+@Serializable
+data class ConsoleProvider(
+    val provider: String = "",
+    val requests: Long = 0,
+    val tokens: Long = 0,
+    val est_cost: Double = 0.0,
+    val act_cost: Double = 0.0,
+    val statuses: List<String> = emptyList(),
+    val unpriced: Boolean = false,
 )
 
 @Serializable
@@ -77,6 +100,13 @@ data class ConsoleModel(
     val tokens: Long = 0,
     val est_cost: Double = 0.0,
     val share_pct: Double = 0.0,
+)
+
+@Serializable
+data class ConsoleDay(
+    val date: String = "",
+    val requests: Long = 0,
+    val est_cost: Double = 0.0,
 )
 
 @Serializable
@@ -91,12 +121,15 @@ data class ConsoleFeed(
     val input: Long = 0,
     val output: Long = 0,
     val cache_read: Long = 0,
+    val cache_write: Long = 0,
     val prompt_in: Long = 0,
     val tokens_total: Long = 0,
     val cache_pct: Int = 0,
     val reasoning: Long = 0,
     val est_cost: Double = 0.0,
+    val act_cost: Double = 0.0,
     val cost_status: String = "",
+    val cost_source: String = "",
     val age_s: Double = 0.0,
     val live: Boolean = false,
 )
@@ -106,6 +139,7 @@ data class ConsoleInflight(
     val source: String = "",
     val session_short: String = "",
     val model: String? = null,
+    val provider: String? = null,
     val task: String? = null,
     val holder: String? = null,
     val calls: Long = 0,
@@ -119,10 +153,19 @@ data class ConsoleInflight(
 data class ConsoleSubs(
     val items: List<ConsolePlan> = emptyList(),
     val total_flat_monthly: Double = 0.0,
+    val total_metered_on_plans_mtd: Double = 0.0,
     val payg_metered_mtd: Double = 0.0,
+    val payg_providers: List<ConsolePayg> = emptyList(),
     val actual_out_of_pocket_month: Double = 0.0,
     val all_metered_equivalent_mtd: Double = 0.0,
     val month_label: String = "",
+)
+
+@Serializable
+data class ConsolePayg(
+    val provider: String = "",
+    val est: Double = 0.0,
+    val calls: Long = 0,
 )
 
 @Serializable
@@ -139,12 +182,24 @@ data class ConsolePlan(
 )
 
 @Serializable
-data class ConsoleSessionHint(
+data class ConsoleSession(
     val id: String = "",
+    val short: String = "",
+    val source: String = "",
+    val model: String = "",
+    val provider: String = "",
+    val messages: Long = 0,
+    val calls: Long = 0,
+    val est_cost: Double = 0.0,
+    val act_cost: Double = 0.0,
     val title: String = "",
+    val last_activity_at: Double? = null,
 )
 
 object ConsoleFmt {
+    /** Desktop console model-dot palette (MDOT). */
+    val MDOT = listOf(0xFFFFB020, 0xFF6FB1FF, 0xFF57C98A, 0xFFC792EA, 0xFFFF8F2E, 0xFF7BD88F, 0xFFEC6A9C, 0xFF4BD2C9)
+
     fun money(v: Double, digits: Int = 2): String = "$" + "%,.${digits}f".format(v)
     fun tok(n: Long): String = when {
         n >= 1_000_000_000 -> "%.1fB".format(n / 1_000_000_000.0)
@@ -153,11 +208,16 @@ object ConsoleFmt {
         else -> n.toString()
     }
     fun int(n: Long): String = "%,d".format(n)
-    fun age(s: Double): String = when {
-        s < 90 -> "just now"
-        s < 3600 -> "${(s / 60).toInt()}m ago"
-        s < 86400 -> "${(s / 3600).toInt()}h ago"
-        else -> "${(s / 86400).toInt()}d ago"
+    /** Matches desktop console ago(): <5s just now, then s/m/h/d. */
+    fun age(s: Double): String {
+        val t = kotlin.math.max(0.0, s).toInt()
+        return when {
+            t < 5 -> "just now"
+            t < 60 -> "${t}s ago"
+            t < 3600 -> "${t / 60}m ago"
+            t < 86400 -> "${t / 3600}h ago"
+            else -> "${t / 86400}d ago"
+        }
     }
     fun consoleBase(webui: String, override: String): String {
         val o = override.trim().trimEnd('/')
