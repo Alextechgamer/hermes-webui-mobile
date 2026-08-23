@@ -35,15 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val KANBAN_NEXT = mapOf(
-    "triage" to "todo",
-    "todo" to "ready",
-    "ready" to "blocked",
-    "blocked" to "todo",
-    "running" to "done",
-    "done" to "todo",
-)
-
 @Composable
 fun TasksPane(vm: AppVm) {
     var openId by remember { mutableStateOf<String?>(null) }
@@ -80,41 +71,6 @@ fun TasksPane(vm: AppVm) {
                     }
                 }
                 HorizontalDivider(color = Wui.Border)
-            }
-        }
-    }
-}
-
-@Composable
-fun KanbanPane(vm: AppVm) {
-    Column(Modifier.fillMaxSize().background(Wui.Bg)) {
-        ErrLine(vm)
-        SectionLabel("Board columns — tap a card to advance status")
-        Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (vm.columns.isEmpty()) Text("No board data.", color = Wui.Muted)
-            vm.columns.forEach { col ->
-                Column(
-                    Modifier.width(240.dp).background(Wui.Surface, RoundedCornerShape(12.dp)).padding(10.dp),
-                ) {
-                    Text("${col.name} · ${col.tasks.size}", color = Wui.Accent, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    col.tasks.forEach { task ->
-                        Column(
-                            Modifier.fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                                .background(Wui.Bg, RoundedCornerShape(8.dp))
-                                .clickable {
-                                    val next = KANBAN_NEXT[task.status] ?: "todo"
-                                    if (task.id.isNotBlank()) vm.moveTask(task.id, next)
-                                }
-                                .padding(8.dp),
-                        ) {
-                            Text(task.title, color = Wui.Text, fontSize = 13.sp)
-                            val sub = listOf(task.assignee, task.priority).filter { it.isNotBlank() }.joinToString(" · ")
-                            if (sub.isNotBlank()) Text(sub, color = Wui.Muted, fontSize = 11.sp)
-                        }
-                    }
-                }
             }
         }
     }

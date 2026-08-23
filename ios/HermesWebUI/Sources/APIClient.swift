@@ -458,25 +458,85 @@ final class APIClient {
         (try? String(data: try await getData("/api/crons/output?job_id=\(q(id))"), encoding: .utf8)) ?? ""
     }
 
-    func kanban() async throws -> [KanbanColumn] {
-        let obj = try await dict("/api/kanban/board")
+    func kanban(board: String = "", assignee: String = "", tenant: String = "", includeArchived: Bool = false, onlyMine: Bool = false) async throws -> [KanbanColumn] {
+        let obj = try await dict("/api/kanban/board" + kanbanQs(board: board, assignee: assignee, tenant: tenant, includeArchived: includeArchived, onlyMine: onlyMine))
         return (obj["columns"] as? [[String: Any]] ?? []).map { c in
             let name = first(c, "name", "id", "title") ?? "column"
-            let tasks = (c["tasks"] as? [[String: Any]] ?? []).map { t in
-                KanbanTask(
-                    id: str(t, "id", "task_id"),
-                    title: first(t, "title", "name", "id") ?? "task",
+            let tasks = (c["tasks"] as? [[String: Any]] ?? []).compactMap { t -> KanbanTask? in
+                let id = str(t, "id", "task_id")
+                if id.isEmpty { return nil }
+                return KanbanTask(
+                    id: id,
+                    title: first(t, "title", "name", "summary", "id") ?? "task",
                     status: first(t, "status") ?? name,
                     assignee: str(t, "assignee"),
-                    priority: stringify(t["priority"] ?? "")
+                    priority: stringify(t["priority"] ?? ""),
+                    body: str(t, "body", "description", "prompt"),
+                    tenant: str(t, "tenant"),
+                    comments: int(t, "comment_count")
                 )
             }
             return KanbanColumn(name: name, tasks: tasks)
         }
     }
 
-    func moveKanban(id: String, status: String) async {
-        _ = try? await sendJSON("PATCH", "/api/kanban/tasks/\(q(id))", body: ["status": status])
+    func kanbanBoards() async -> (String, [KanbanBoardMeta]) {
+        guard let obj = try? await dict("/api/kanban/boards") else { return ("", []) }
+        let current = first(obj, "current", "active") ?? ""
+        let list = (obj["boards"] as? [[String: Any]] ?? []).compactMap { b -> KanbanBoardMeta? in
+            let slug = str(b, "slug", "id", "name")
+            if slug.isEmpty { return nil }
+            return KanbanBoardMeta(
+                slug: slug,
+                name: first(b, "name", "title") ?? slug,
+                total: int(b, "total"),
+                current: bool(b, "is_current", false) || slug == current
+            )
+        }
+        let cur = list.first(where: { $0.current })?.slug ?? current
+        return (cur, list)
+    }
+
+    func kanbanStats(board: String) async -> KanbanStats {
+        guard let obj = try? await dict("/api/kanban/stats" + kanbanQs(board: board)) else { return KanbanStats() }
+        var by: [String: Int] = [:]
+        if let m = obj["by_status"] as? [String: Any] {
+            for (k, v) in m { if let n = v as? Int { by[k] = n } else if let n = v as? NSNumber { by[k] = n.intValue } }
+        }
+        return KanbanStats(byStatus: by)
+    }
+
+    func kanbanAssignees(board: String) async -> [String] {
+        guard let obj = try? await dict("/api/kanban/assignees" + kanbanQs(board: board)) else { return [] }
+        return (obj["assignees"] as? [String]) ?? []
+    }
+
+    func switchKanbanBoard(_ slug: String) async {
+        _ = try? await sendJSON("POST", "/api/kanban/boards/\(q(slug))/switch", body: [:])
+    }
+
+    func createKanbanTask(title: String, board: String) async {
+        _ = try? await sendJSON("POST", "/api/kanban/tasks" + kanbanQs(board: board), body: ["title": title])
+    }
+
+    func dispatchKanban(board: String, dryRun: Bool) async {
+        var qs = kanbanQs(board: board)
+        if dryRun { qs += qs.isEmpty ? "?dry_run=1" : "&dry_run=1" }
+        _ = try? await sendJSON("POST", "/api/kanban/dispatch" + qs, body: [:])
+    }
+
+    func moveKanban(id: String, status: String, board: String = "") async {
+        _ = try? await sendJSON("PATCH", "/api/kanban/tasks/\(q(id))" + kanbanQs(board: board), body: ["status": status])
+    }
+
+    private func kanbanQs(board: String = "", assignee: String = "", tenant: String = "", includeArchived: Bool = false, onlyMine: Bool = false) -> String {
+        var parts: [String] = []
+        if !board.isEmpty { parts.append("board=\(q(board))") }
+        if !assignee.isEmpty { parts.append("assignee=\(q(assignee))") }
+        if !tenant.isEmpty { parts.append("tenant=\(q(tenant))") }
+        if includeArchived { parts.append("include_archived=1") }
+        if onlyMine { parts.append("only_mine=1") }
+        return parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
     }
 
     func skills() async throws -> [SkillRow] {

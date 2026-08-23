@@ -1,36 +1,36 @@
-# Grok on Mac — archive IPA onto the existing v0.9.10 tag
+# Grok on Mac — archive IPA onto the existing v0.9.11 tag
 
 Paste everything below the line into Grok on the Apple Silicon Mac.
 
 ---
 
-You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.10`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
+You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.11`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
 
-Repo: https://github.com/Alextechgamer/hermes-webui-mobile  
-Tag already exists: `v0.9.10` (`0b7217f` on `main`). Release already has `hermes-webui-0.9.10-debug.apk`.  
+Repo: https://github.com/Alextechgamer/hermes-webui-mobile
+Tag already exists: `v0.9.11` on `main`. Release already has `hermes-webui-0.9.11-debug.apk`.
 **Do not retag. Do not delete or replace the APK. Do not create a new release. Do not bump the version. Do not commit unless you must fix a local signing file that is gitignored.**
 
-This release makes Insights/Dashboard a 1:1 native replica of the desktop Hermes Console — new file `ios/HermesWebUI/Sources/ConsolePane.swift` plus a widened `ConsoleModels.swift`. If the build fails there, report the exact Swift error; do not delete the file to "fix" it.
+This release adds a native **official Hermes Dashboard** (`:9119`) under the **Dashboard** rail item (`ios/HermesWebUI/Sources/OfficialDashView.swift`): password login `POST /auth/password-login`, Chat via JSON-RPC `/api/ws` (`session.create` / `session.resume` / `prompt.submit`), Sessions `GET /api/sessions`, Kanban `/api/plugins/kanban`. Browser `/chat` is an xterm TUI over `/api/pty` — do **not** add WKWebView to fake it. Insights stays Hermes Console `:8790`.
 
 THIS IS NOT A WEBVIEW. Do not add `WKWebView` / `UIWebView` / `SFSafariViewController` as product UI. Do not bake in any hostname, Tailscale IP, MagicDNS name, `/home/alex`, password, or Apple Team ID.
 
 ## Hard checks before you archive
 
 1. `xcodebuild -version` works. Confirm an Apple ID team is available in Xcode (Signing & Capabilities). `ios/project.yml` has **no** `DEVELOPMENT_TEAM` — pick the team locally. Do not write a team id into git.
-2. `git clone` if needed, else `git fetch && git checkout main && git pull`. Confirm:
-   - `git rev-parse HEAD` is `0b7217f1623895e09228c6ef5aae931df6182d6f` (or later **only if** it is still version 0.9.10).
-   - `ios/project.yml` has `MARKETING_VERSION: "0.9.10"` and `CURRENT_PROJECT_VERSION: "22"`.
-   - `Info.plist` / generated project: `NSAllowsArbitraryLoads = true` and **does not** contain `NSAllowsLocalNetworking` (that combo blocks Tailscale `100.x` http).
-3. `cd ios && ./setup.sh` (installs XcodeGen via brew if missing, then `xcodegen generate`).
-4. `open HermesWebUI.xcodeproj` → target Hermes WebUI → Signing: Automatically manage signing → your Team. Bundle id `com.hermes.webui`.
+2. `git clone` if needed, else `git fetch && git checkout main && git pull --ff-only`. Confirm:
+   - `ios/project.yml` has `MARKETING_VERSION: "0.9.11"` and `CURRENT_PROJECT_VERSION: "23"`.
+   - `OfficialDashView.swift` exists.
+   - `Info.plist` / generated project: `NSAllowsArbitraryLoads = true` and **does not** contain `NSAllowsLocalNetworking`.
+3. `cd ios && ./setup.sh`
+4. `open HermesWebUI.xcodeproj` → Signing: Automatically manage signing → your Team. Bundle id `com.hermes.webui`.
 
 ## Archive + export
 
 Prefer Xcode GUI if `ExportOptions.plist` is missing (do not invent a team id):
 
 - Product → Archive
-- Organizer → Distribute App → **Ad Hoc or Development** (same style as `hermes-webui-0.9.9.ipa`) → export
-- Rename the exported IPA to **`hermes-webui-0.9.10.ipa`**
+- Organizer → Distribute App → **Ad Hoc or Development** → export
+- Rename the exported IPA to **`hermes-webui-0.9.11.ipa`**
 
 CLI only if a working `ExportOptions.plist` already exists locally (do not commit it):
 
@@ -47,31 +47,23 @@ xcodebuild -exportArchive \
   -exportOptionsPlist ExportOptions.plist \
   -allowProvisioningUpdates
 
-cp "$PWD/build/ipa/"*.ipa "$PWD/build/ipa/hermes-webui-0.9.10.ipa"
+cp "$PWD/build/ipa/"*.ipa "$PWD/build/ipa/hermes-webui-0.9.11.ipa"
 ```
 
-If export fails on signing, stop and say what Xcode printed. Do not fake an IPA (a 1 MB placeholder is not a real archive).
-
-## Smoke check before upload
-
-Install to a simulator or device if convenient and open the Insights panel: it must show the Console topbar (HERMES CONSOLE, Connected pill, Auto-refresh), the 4-KPI strip, and a "Detailed usage" button that opens the overlay with By provider / Models / Spend by day / Recent sessions / Full usage tables. If the panel is the old thin summary, you built stale source — re-check the tag.
+If export fails on signing, stop and say what Xcode printed. Do not fake an IPA.
 
 ## Upload onto the same tag
 
 ```bash
 gh auth status
-gh release view v0.9.10
-gh release upload v0.9.10 hermes-webui-0.9.10.ipa
+gh release view v0.9.11
+gh release upload v0.9.11 hermes-webui-0.9.11.ipa
 ```
 
-Use the real path to the IPA. **Never** `--clobber` the APK. If `hermes-webui-0.9.10.ipa` is already on the release, stop and report; do not overwrite unless the existing asset is clearly a failed/empty upload.
-
-Confirm with:
+Use the real path to the IPA. **Never** `--clobber` the APK. If `hermes-webui-0.9.11.ipa` is already on the release, stop and report.
 
 ```bash
-gh release view v0.9.10 --json assets --jq '.assets[] | {name,size}'
+gh release view v0.9.11 --json assets --jq '.assets[] | {name,size}'
 ```
 
-You should see both `hermes-webui-0.9.10-debug.apk` (~18 MB) and `hermes-webui-0.9.10.ipa` (real archive, typically several MB, not a 1-line stub).
-
-Reply with the release URL and both asset names + sizes. Done.
+You should see both `hermes-webui-0.9.11-debug.apk` and `hermes-webui-0.9.11.ipa`. Reply with the release URL and both asset names + sizes. Done.

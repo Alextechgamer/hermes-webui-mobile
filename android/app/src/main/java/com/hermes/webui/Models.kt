@@ -11,10 +11,10 @@ enum class Panel(val label: String, val inRail: Boolean = true) {
     Todos("Todos"),
     Insights("Insights"),
     Logs("Logs"),
+    Dashboard("Dashboard"),
     Settings("Settings"),
     Files("Files", inRail = false),
     Terminal("Terminal", inRail = false),
-    Dashboard("Dashboard", inRail = false),
 }
 
 enum class SettingsSection(val label: String) {
@@ -156,7 +156,29 @@ data class KanbanTask(
     val status: String,
     val assignee: String = "",
     val priority: String = "",
+    val body: String = "",
+    val tenant: String = "",
+    val comments: Int = 0,
 )
+
+data class KanbanBoardMeta(
+    val slug: String,
+    val name: String,
+    val total: Int = 0,
+    val current: Boolean = false,
+)
+
+data class KanbanStats(
+    val byStatus: Map<String, Int> = emptyMap(),
+    val byAssignee: Map<String, Int> = emptyMap(),
+) {
+    fun line(): String {
+        val order = listOf("triage", "todo", "ready", "running", "blocked", "done")
+        val bits = order.mapNotNull { k -> byStatus[k]?.takeIf { it > 0 }?.let { "${it} ${k.replaceFirstChar { c -> c.uppercase() }}" } }
+        val running = byStatus["running"] ?: 0
+        return (bits + if (running > 0) listOf("$running Running") else emptyList()).distinct().joinToString("  ")
+    }
+}
 
 data class SkillRow(
     val name: String,

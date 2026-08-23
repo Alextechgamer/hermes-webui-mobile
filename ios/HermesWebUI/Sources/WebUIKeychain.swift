@@ -7,7 +7,7 @@ enum WebUIKeychain {
     private static let service = "com.hermes.webui.login"
     private static let account = "webui-password"
 
-    static func read() -> String? {
+    static func read(account: String = "webui-password") -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -21,7 +21,7 @@ enum WebUIKeychain {
         return String(data: data, encoding: .utf8)
     }
 
-    static func write(_ password: String) {
+    static func write(_ password: String, account: String = "webui-password") {
         let data = Data(password.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

@@ -88,6 +88,28 @@ struct KanbanTask: Identifiable {
     var status: String
     var assignee: String
     var priority: String
+    var body: String = ""
+    var tenant: String = ""
+    var comments: Int = 0
+}
+
+struct KanbanBoardMeta: Identifiable {
+    var id: String { slug }
+    var slug: String
+    var name: String
+    var total: Int = 0
+    var current: Bool = false
+}
+
+struct KanbanStats {
+    var byStatus: [String: Int] = [:]
+    func line() -> String {
+        let order = ["triage", "todo", "ready", "running", "blocked", "done"]
+        return order.compactMap { k in
+            guard let n = byStatus[k], n > 0 else { return nil }
+            return "\(n) \(k.capitalized)"
+        }.joined(separator: "  ")
+    }
 }
 
 struct SkillRow: Identifiable {
@@ -187,7 +209,7 @@ enum Panel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var inRail: Bool {
         switch self {
-        case .files, .terminal, .dashboard: return false
+        case .files, .terminal: return false
         default: return true
         }
     }

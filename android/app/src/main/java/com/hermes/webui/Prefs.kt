@@ -26,6 +26,23 @@ class Prefs(ctx: Context) {
         get() = prefs.getString("dashboard_url", "") ?: ""
         set(v) { prefs.edit().putString("dashboard_url", v.trim()).apply() }
 
+    /** Official Hermes Dashboard (:9119). Empty = derive from WebUI host:9119 */
+    var officialUrl: String
+        get() = prefs.getString("official_url", "") ?: ""
+        set(v) { prefs.edit().putString("official_url", v.trim()).apply() }
+
+    var officialUser: String
+        get() = prefs.getString("official_user", "") ?: ""
+        set(v) { prefs.edit().putString("official_user", v.trim()).apply() }
+
+    var officialPassword: String
+        get() = prefs.getString("official_password", "") ?: ""
+        set(v) { prefs.edit().putString("official_password", v).apply() }
+
+    var officialCookies: String
+        get() = prefs.getString("official_cookies", "[]") ?: "[]"
+        set(v) { prefs.edit().putString("official_cookies", v).apply() }
+
     var lastSid: String
         get() = prefs.getString("last_sid", "") ?: ""
         set(v) { prefs.edit().putString("last_sid", v).apply() }

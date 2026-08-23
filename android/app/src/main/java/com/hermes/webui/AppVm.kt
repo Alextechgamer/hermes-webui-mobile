@@ -43,6 +43,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val reasoning = mutableStateOf(ReasoningStatus())
     val jobs = mutableStateListOf<CronJob>()
     val columns = mutableStateListOf<KanbanColumn>()
+    val kanbanBoards = mutableStateListOf<KanbanBoardMeta>()
+    val kanbanBoard = mutableStateOf("")
+    val kanbanSearch = mutableStateOf("")
+    val kanbanAssignee = mutableStateOf("")
+    val kanbanTenant = mutableStateOf("")
+    val kanbanArchived = mutableStateOf(false)
+    val kanbanMine = mutableStateOf(false)
+    val kanbanAssignees = mutableStateListOf<String>()
+    val kanbanStats = mutableStateOf(KanbanStats())
+    val kanbanDraft = mutableStateOf("")
+    val kanbanOpen = mutableStateOf<KanbanTask?>(null)
     val skills = mutableStateListOf<SkillRow>()
     val skillBody = mutableStateOf("")
     val memory = mutableStateOf(MemoryDoc())
@@ -56,6 +67,27 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val dash = mutableStateListOf<DashCard>()
     val console = mutableStateOf<ConsoleUsage?>(null)
     val consoleError = mutableStateOf<String?>(null)
+    val officialTab = mutableStateOf("chat")
+    val officialStatus = mutableStateOf<OfficialStatus?>(null)
+    val officialError = mutableStateOf<String?>(null)
+    val officialNeedsLogin = mutableStateOf(false)
+    val officialUser = mutableStateOf(prefs.officialUser)
+    val officialPassword = mutableStateOf(prefs.officialPassword)
+    val officialUrlDraft = mutableStateOf(prefs.officialUrl)
+    val officialSessions = mutableStateListOf<OfficialSession>()
+    val officialBubbles = mutableStateListOf<OfficialMsg>()
+    val officialLive = mutableStateOf("")
+    val officialBusy = mutableStateOf(false)
+    val officialSid = mutableStateOf("")
+    val officialDraft = mutableStateOf("")
+    val officialWsState = mutableStateOf("idle")
+    val officialColumns = mutableStateListOf<KanbanColumn>()
+    val officialBoards = mutableStateListOf<KanbanBoardMeta>()
+    val officialBoard = mutableStateOf("")
+    val officialTaskDraft = mutableStateOf("")
+    val officialOpenTask = mutableStateOf<KanbanTask?>(null)
+    private var official: OfficialDashClient? = null
+    private var officialWs: okhttp3.WebSocket? = null
     val costConfig = mutableStateOf<CostConfig?>(null)
     val settingsItems = mutableStateListOf<SettingItem>()
     val settingEdits = mutableStateOf<Map<String, String>>(emptyMap())
@@ -229,10 +261,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         val list = withContext(Dispatchers.IO) { c.crons() }
                         jobs.clear(); jobs.addAll(list)
                     }
-                    Panel.Kanban -> {
-                        val list = withContext(Dispatchers.IO) { c.kanban() }
-                        columns.clear(); columns.addAll(list)
-                    }
+                    Panel.Kanban -> loadKanban()
                     Panel.Skills -> {
                         val list = withContext(Dispatchers.IO) { c.skills() }
                         skills.clear(); skills.addAll(list)
@@ -255,7 +284,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
                         logLines.clear(); logLines.addAll(lines)
                     }
-                    Panel.Dashboard -> loadConsole()
+                    Panel.Dashboard -> loadOfficial()
                     Panel.Settings -> {
                         val items = withContext(Dispatchers.IO) { c.settings() }
                         settingsItems.clear(); settingsItems.addAll(items)
@@ -584,11 +613,62 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun loadKanban() {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val (cur, boards) = withContext(Dispatchers.IO) { runCatching { c.kanbanBoards() }.getOrDefault("" to emptyList()) }
+                kanbanBoards.clear(); kanbanBoards.addAll(boards)
+                if (kanbanBoard.value.isBlank() || boards.none { it.slug == kanbanBoard.value }) {
+                    kanbanBoard.value = cur.ifBlank { boards.firstOrNull()?.slug.orEmpty() }
+                }
+                val board = kanbanBoard.value
+                val list = withContext(Dispatchers.IO) {
+                    c.kanban(board, kanbanAssignee.value, kanbanTenant.value, kanbanArchived.value, kanbanMine.value)
+                }
+                columns.clear(); columns.addAll(list)
+                kanbanStats.value = withContext(Dispatchers.IO) { runCatching { c.kanbanStats(board) }.getOrDefault(KanbanStats()) }
+                val people = withContext(Dispatchers.IO) { runCatching { c.kanbanAssignees(board) }.getOrDefault(emptyList()) }
+                kanbanAssignees.clear(); kanbanAssignees.addAll(people)
+            } catch (e: Exception) {
+                error.value = e.message
+            }
+        }
+    }
+
+    fun switchKanbanBoard(slug: String) {
+        val c = api ?: return
+        kanbanBoard.value = slug
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.switchKanbanBoard(slug) } }
+            loadKanban()
+        }
+    }
+
+    fun createKanbanTask() {
+        val title = kanbanDraft.value.trim()
+        if (title.isEmpty()) return
+        val c = api ?: return
+        kanbanDraft.value = ""
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.createKanbanTask(title, kanbanBoard.value) } }
+            loadKanban()
+        }
+    }
+
+    fun dispatchKanban(dry: Boolean) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.dispatchKanban(kanbanBoard.value, dry) } }
+            loadKanban()
+        }
+    }
+
     fun moveTask(id: String, status: String) {
         val c = api ?: return
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { c.moveKanban(id, status) } }
-            loadPanel(Panel.Kanban)
+            withContext(Dispatchers.IO) { runCatching { c.moveKanban(id, status, kanbanBoard.value) } }
+            loadKanban()
         }
     }
 
@@ -742,7 +822,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             while (isActive) {
                 delay(4000)
                 val c = api ?: continue
-                if (panel.value == Panel.Dashboard || panel.value == Panel.Insights) loadConsole()
+                if (panel.value == Panel.Insights) loadConsole()
                 if (!ready.value || sid.isBlank()) continue
                 runCatching {
                     val a = withContext(Dispatchers.IO) { c.approval(sid) }
@@ -1118,6 +1198,243 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     settleTurn()
                 }
             }
+        }
+    }
+
+    fun officialBase(): String = OfficialUrl.base(prefs.baseUrl, prefs.officialUrl)
+
+    fun loadOfficial() {
+        viewModelScope.launch {
+            val base = officialBase()
+            if (base.isBlank()) {
+                officialError.value = "Set the official Dashboard URL (same host as WebUI, port 9119)."
+                return@launch
+            }
+            val c = official ?: OfficialDashClient(prefs).also { official = it }
+            c.base = base
+            officialError.value = null
+            try {
+                officialStatus.value = withContext(Dispatchers.IO) { c.status() }
+                officialNeedsLogin.value = false
+                refreshOfficial()
+            } catch (e: AuthException) {
+                officialNeedsLogin.value = true
+                if (prefs.officialUser.isNotBlank() && prefs.officialPassword.isNotBlank()) {
+                    officialLogin(prefs.officialUser, prefs.officialPassword)
+                }
+            } catch (e: Exception) {
+                officialError.value = e.message
+            }
+        }
+    }
+
+    fun officialLogin(user: String, password: String) {
+        viewModelScope.launch {
+            val base = officialBase()
+            if (base.isBlank()) {
+                officialError.value = "Official Dashboard URL is empty."
+                return@launch
+            }
+            prefs.officialUser = user
+            prefs.officialPassword = password
+            officialUser.value = user
+            officialPassword.value = password
+            val c = official ?: OfficialDashClient(prefs).also { official = it }
+            c.base = base
+            try {
+                val ok = withContext(Dispatchers.IO) { c.login(user, password) }
+                if (!ok) {
+                    officialNeedsLogin.value = true
+                    officialError.value = "Invalid dashboard username or password."
+                    return@launch
+                }
+                officialNeedsLogin.value = false
+                officialError.value = null
+                officialStatus.value = withContext(Dispatchers.IO) { runCatching { c.status() }.getOrNull() }
+                refreshOfficial()
+            } catch (e: Exception) {
+                officialNeedsLogin.value = true
+                officialError.value = e.message
+            }
+        }
+    }
+
+    fun saveOfficialUrl(url: String) {
+        prefs.officialUrl = url.trim()
+        officialUrlDraft.value = prefs.officialUrl
+        official = null
+        loadOfficial()
+    }
+
+    private fun refreshOfficial() {
+        when (officialTab.value) {
+            "kanban" -> loadOfficialKanban()
+            else -> loadOfficialSessions()
+        }
+    }
+
+    fun loadOfficialSessions() {
+        val c = official ?: return
+        viewModelScope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) { c.sessions() }
+                officialSessions.clear(); officialSessions.addAll(list)
+                if (officialSid.value.isBlank()) {
+                    list.firstOrNull()?.let { openOfficialSession(it.id) }
+                }
+            } catch (e: AuthException) {
+                officialNeedsLogin.value = true
+            } catch (e: Exception) {
+                officialError.value = e.message
+            }
+        }
+    }
+
+    fun openOfficialSession(id: String) {
+        val c = official ?: return
+        officialSid.value = id
+        viewModelScope.launch {
+            try {
+                val rows = withContext(Dispatchers.IO) { c.messages(id) }
+                officialBubbles.clear(); officialBubbles.addAll(rows)
+                officialLive.value = ""
+                connectOfficialWs(resume = id)
+            } catch (e: Exception) {
+                officialError.value = e.message
+                connectOfficialWs(resume = id)
+            }
+        }
+    }
+
+    fun newOfficialChat() {
+        officialSid.value = ""
+        officialBubbles.clear()
+        officialLive.value = ""
+        connectOfficialWs(resume = "")
+    }
+
+    fun sendOfficial() {
+        val text = officialDraft.value.trim()
+        if (text.isEmpty()) return
+        officialDraft.value = ""
+        officialBubbles.add(OfficialMsg("u-${System.currentTimeMillis()}", "user", text))
+        officialBusy.value = true
+        val ws = officialWs
+        val c = official
+        if (ws == null || c == null) {
+            officialError.value = "Not connected to :9119 /api/ws"
+            officialBusy.value = false
+            return
+        }
+        if (officialSid.value.isBlank()) {
+            c.rpc(ws, "session.create", mapOf("source" to "cli"))
+        }
+        val sid = officialSid.value
+        if (sid.isNotBlank()) {
+            c.rpc(ws, "prompt.submit", mapOf("session_id" to sid, "text" to text))
+        } else {
+            pendingOfficialPrompt = text
+        }
+    }
+
+    private var pendingOfficialPrompt: String? = null
+
+    private fun connectOfficialWs(resume: String) {
+        val c = official ?: return
+        officialWs?.close(1000, "reopen")
+        officialWsState.value = "connecting"
+        viewModelScope.launch {
+            val ws = withContext(Dispatchers.IO) {
+                c.openChat(
+                    onEvent = { type, payload ->
+                        viewModelScope.launch {
+                            handleOfficialEvent(type, payload)
+                        }
+                    },
+                    onState = { officialWsState.value = it },
+                )
+            }
+            officialWs = ws
+            if (resume.isNotBlank()) {
+                c.rpc(ws, "session.resume", mapOf("session_id" to resume))
+            } else {
+                c.rpc(ws, "session.create", mapOf("source" to "cli"))
+            }
+        }
+    }
+
+    private fun handleOfficialEvent(type: String, payload: kotlinx.serialization.json.JsonObject) {
+        when {
+            type == "session.info" || type.contains("session") && payload["session_id"] != null -> {
+                val sid = payload.prim("session_id", "id")
+                if (sid.isNotBlank()) {
+                    officialSid.value = sid
+                    pendingOfficialPrompt?.let { text ->
+                        pendingOfficialPrompt = null
+                        official?.rpc(officialWs ?: return, "prompt.submit", mapOf("session_id" to sid, "text" to text))
+                    }
+                }
+            }
+            type.contains("delta") || type.contains("token") || type == "message.delta" -> {
+                val t = payload.prim("text", "content", "delta")
+                if (t.isNotBlank()) officialLive.value += t
+                officialBusy.value = true
+            }
+            type.contains("complete") || type == "message" || type == "turn.complete" -> {
+                val t = officialLive.value.ifBlank { payload.prim("text", "content") }
+                if (t.isNotBlank()) officialBubbles.add(OfficialMsg("a-${System.currentTimeMillis()}", "assistant", t))
+                officialLive.value = ""
+                officialBusy.value = false
+            }
+            type.contains("error") -> {
+                officialError.value = payload.prim("message", "error", "text")
+                officialBusy.value = false
+            }
+        }
+    }
+
+    fun loadOfficialKanban() {
+        val c = official ?: return
+        viewModelScope.launch {
+            try {
+                val (cur, boards) = withContext(Dispatchers.IO) { c.kanbanBoards() }
+                officialBoards.clear(); officialBoards.addAll(boards)
+                if (officialBoard.value.isBlank()) officialBoard.value = cur
+                val cols = withContext(Dispatchers.IO) { c.kanban(officialBoard.value) }
+                officialColumns.clear(); officialColumns.addAll(cols)
+            } catch (e: AuthException) {
+                officialNeedsLogin.value = true
+            } catch (e: Exception) {
+                officialError.value = e.message
+            }
+        }
+    }
+
+    fun switchOfficialBoard(slug: String) {
+        val c = official ?: return
+        officialBoard.value = slug
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.switchBoard(slug) } }
+            loadOfficialKanban()
+        }
+    }
+
+    fun createOfficialTask() {
+        val title = officialTaskDraft.value.trim()
+        if (title.isEmpty()) return
+        val c = official ?: return
+        officialTaskDraft.value = ""
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.createTask(title, officialBoard.value) } }
+            loadOfficialKanban()
+        }
+    }
+
+    fun moveOfficialTask(id: String, status: String) {
+        val c = official ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.moveTask(id, status, officialBoard.value) } }
+            loadOfficialKanban()
         }
     }
 }

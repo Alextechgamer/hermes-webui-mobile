@@ -191,7 +191,7 @@ struct RootView: View {
             case .terminal: TerminalPane(store: store)
             case .insights: InsightsPane(store: store)
             case .logs: LogsPane(store: store)
-            case .dashboard: DashboardPane(store: store)
+            case .dashboard: OfficialDashView(settings: settings)
             case .settings: SettingsPane(store: store, settings: settings)
             }
         }

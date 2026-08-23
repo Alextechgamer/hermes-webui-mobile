@@ -57,6 +57,7 @@ Auth is cookie + CSRF. No bearer token.
 |---|---|---|
 | Tasks | `/api/crons` `{jobs}` | `/api/crons/{run,pause,resume}` `{job_id}` |
 | Kanban | `/api/kanban/board` `{columns:[{name,tasks}]}` | PATCH `/api/kanban/tasks/<id>` `{status}` |
+| Official Dashboard | `:9119` `GET /api/status`, `GET /api/sessions`, `POST /auth/password-login`, `POST /api/auth/ws-ticket`, WS `/api/ws` (`session.create` / `session.resume` / `prompt.submit`), `/api/plugins/kanban/*` | same |
 | Skills | `/api/skills` `{skills:[{name,description,category,disabled}]}` | `/api/skills/toggle` `{name,enabled}` |
 | Memory | `/api/memory` `{memory,user,soul,project_context}` | `/api/memory/write` `{section,content}` |
 | Spaces | `/api/workspaces` `{workspaces,last}` | — |

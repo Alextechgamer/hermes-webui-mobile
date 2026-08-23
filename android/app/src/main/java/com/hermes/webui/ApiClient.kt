@@ -394,28 +394,107 @@ class ApiClient(base: String, prefs: Prefs) {
         return runCatching { getRaw("/api/crons/output?job_id=${enc(jobId)}").take(12000) }.getOrDefault("")
     }
 
-    fun kanban(): List<KanbanColumn> {
-        val o = parse("/api/kanban/board").asObj()
-        return (o.arr("columns") ?: JsonArray(emptyList())).map { col ->
+    fun kanban(
+        board: String = "",
+        assignee: String = "",
+        tenant: String = "",
+        includeArchived: Boolean = false,
+        onlyMine: Boolean = false,
+    ): List<KanbanColumn> {
+        val o = parse("/api/kanban/board${kanbanQs(board, assignee, tenant, includeArchived, onlyMine)}").asObj()
+        val cols = o.arr("columns") ?: JsonArray(emptyList())
+        return cols.map { col ->
             val c = col.asObj()
             KanbanColumn(
                 name = c.str("name", "id", "title").ifBlank { "column" },
-                tasks = (c.arr("tasks") ?: JsonArray(emptyList())).mapNotNull { t ->
-                    val o = t.asObjOrNull() ?: return@mapNotNull null
-                    KanbanTask(
-                        id = o.str("id", "task_id"),
-                        title = o.str("title", "name", "id").ifBlank { "task" },
-                        status = o.str("status").ifBlank { c.str("name") },
-                        assignee = o.str("assignee"),
-                        priority = o.anyToString("priority"),
-                    )
-                },
+                tasks = (c.arr("tasks") ?: JsonArray(emptyList())).mapNotNull { t -> parseKanbanTask(t.asObjOrNull(), c.str("name")) },
             )
         }
     }
 
-    fun moveKanban(id: String, status: String) {
-        patchRaw("/api/kanban/tasks/${enc(id)}", """{"status":${q(status)}}""")
+    fun kanbanBoards(): Pair<String, List<KanbanBoardMeta>> {
+        val o = parse("/api/kanban/boards").asObj()
+        val current = o.str("current", "active")
+        val list = (o.arr("boards") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val b = el.asObjOrNull() ?: return@mapNotNull null
+            val slug = b.str("slug", "id", "name")
+            if (slug.isBlank()) return@mapNotNull null
+            KanbanBoardMeta(
+                slug = slug,
+                name = b.str("name", "title").ifBlank { slug },
+                total = b.int("total"),
+                current = b.bool("is_current") || slug == current,
+            )
+        }
+        val cur = list.firstOrNull { it.current }?.slug ?: current
+        return cur to list
+    }
+
+    fun kanbanStats(board: String): KanbanStats {
+        val o = runCatching { parse("/api/kanban/stats${kanbanQs(board)}").asObj() }.getOrNull() ?: return KanbanStats()
+        fun mapOf(key: String): Map<String, Int> {
+            val obj = o.obj(key) ?: return emptyMap()
+            return obj.keys.associateWith { obj.int(it) }
+        }
+        return KanbanStats(mapOf("by_status"), mapOf("by_assignee"))
+    }
+
+    fun kanbanAssignees(board: String): List<String> {
+        val o = runCatching { parse("/api/kanban/assignees${kanbanQs(board)}").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("assignees") ?: JsonArray(emptyList())).mapNotNull {
+            it.primitiveOrNull()?.takeIf { s -> s.isNotBlank() }
+        }
+    }
+
+    fun switchKanbanBoard(slug: String) {
+        postRaw("/api/kanban/boards/${enc(slug)}/switch", "{}")
+    }
+
+    fun createKanbanTask(title: String, board: String) {
+        postRaw("/api/kanban/tasks${kanbanQs(board)}", """{"title":${q(title)}}""")
+    }
+
+    fun dispatchKanban(board: String, dryRun: Boolean) {
+        val extra = if (dryRun) "dry_run=1" else ""
+        val qs = kanbanQs(board).let { if (it.isEmpty()) if (extra.isEmpty()) "" else "?$extra" else if (extra.isEmpty()) it else "$it&$extra" }
+        postRaw("/api/kanban/dispatch$qs", "{}")
+    }
+
+    fun moveKanban(id: String, status: String, board: String = "") {
+        patchRaw("/api/kanban/tasks/${enc(id)}${kanbanQs(board)}", """{"status":${q(status)}}""")
+    }
+
+    private fun parseKanbanTask(o: JsonObject?, fallbackStatus: String): KanbanTask? {
+        if (o == null) return null
+        val id = o.str("id", "task_id")
+        if (id.isBlank()) return null
+        val comments = o.int("comment_count")
+        return KanbanTask(
+            id = id,
+            title = o.str("title", "name", "summary", "id").ifBlank { "task" },
+            status = o.str("status").ifBlank { fallbackStatus },
+            assignee = o.str("assignee"),
+            priority = o.anyToString("priority"),
+            body = o.str("body", "description", "prompt"),
+            tenant = o.str("tenant"),
+            comments = comments,
+        )
+    }
+
+    private fun kanbanQs(
+        board: String = "",
+        assignee: String = "",
+        tenant: String = "",
+        includeArchived: Boolean = false,
+        onlyMine: Boolean = false,
+    ): String {
+        val parts = mutableListOf<String>()
+        if (board.isNotBlank()) parts += "board=${enc(board)}"
+        if (assignee.isNotBlank()) parts += "assignee=${enc(assignee)}"
+        if (tenant.isNotBlank()) parts += "tenant=${enc(tenant)}"
+        if (includeArchived) parts += "include_archived=1"
+        if (onlyMine) parts += "only_mine=1"
+        return if (parts.isEmpty()) "" else "?" + parts.joinToString("&")
     }
 
     fun skills(): List<SkillRow> {
