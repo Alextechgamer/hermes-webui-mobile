@@ -491,7 +491,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             keepAlive(true)
             try {
                 val newStream = withContext(Dispatchers.IO) {
-                    c.startChat(sid, text, selectedModel.value.ifBlank { null }, attachments)
+                    c.startChat(
+                        sid,
+                        text,
+                        selectedModel.value.ifBlank { null },
+                        attachments,
+                        models.firstOrNull { it.id == selectedModel.value }?.provider,
+                    )
                 }
                 if (newStream.isNotEmpty()) attachStream(newStream, replay = false) else recoverLive()
             } catch (e: Exception) {

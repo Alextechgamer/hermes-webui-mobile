@@ -18,7 +18,7 @@ Auth is cookie + CSRF. No bearer token.
   - `content` may be a string **or** a parts array (`[{text,content,value}, …]`) — flatten/join
   - huge sidecars auto-tail unless `full=1`
   - `_messages_truncated` / `todo_state` may be present
-- `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`, `attachments`)
+- `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`, `model_provider`, `explicit_model_pick`, `attachments`). Send **both** `model` and `model_provider` (same as desktop). Grok/xAI ids use a version **dot** (`grok-4.6`); never send `grok-4-6`.
 - `POST /api/chat/steer` `{session_id,text}` → `{accepted}` — mid-run user text. Do **not** treat this as a new user bubble; render a STEER card. Attachments cannot go on steer — queue them for the next turn.
 - `GET /api/reasoning?model=&provider=` → `{reasoning_effort, supported_efforts, supports_thinking_toggle}`
 - `POST /api/reasoning` `{effort, model?, provider?}` — same keys as desktop composer

@@ -218,9 +218,14 @@ final class APIClient {
         _ = try? await postJSON("/api/session/delete", body: ["session_id": id])
     }
 
-    func startChat(sessionId: String, message: String, model: String?, attachments: [String] = []) async throws -> ChatStart {
+    func startChat(sessionId: String, message: String, model: String?, attachments: [String] = [], modelProvider: String? = nil) async throws -> ChatStart {
         var body: [String: Any] = ["session_id": sessionId, "message": message]
-        if let model, !model.isEmpty { body["model"] = model }
+        if let model, !model.isEmpty {
+            let send = ModelIds.forSend(model, provider: modelProvider ?? "")
+            body["model"] = send
+            body["explicit_model_pick"] = true
+        }
+        if let modelProvider, !modelProvider.isEmpty { body["model_provider"] = modelProvider }
         if !attachments.isEmpty { body["attachments"] = attachments }
         return try JSONDecoder().decode(ChatStart.self, from: try await postJSON("/api/chat/start", body: body))
     }

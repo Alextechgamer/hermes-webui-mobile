@@ -155,6 +155,8 @@ struct ChatPane: View {
         let workspaceLabel = workspace.isEmpty ? "Home" : workspace
         let profile = store.activeProfile.isEmpty ? "default" : store.activeProfile
         let model = store.selectedModel.isEmpty ? (store.models.first?.id ?? "") : store.selectedModel
+        let modelProvider = store.models.first(where: { $0.id == model })?.provider ?? ""
+        let modelChip = ModelIds.forSend(model, provider: modelProvider)
         let canSend = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.pendingAttach.isEmpty
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -251,8 +253,8 @@ struct ChatPane: View {
                         FooterChip(symbol: "folder", label: workspaceLabel) {
                             Task { await store.go(.files) }
                         }
-                        if !model.isEmpty {
-                            FooterChip(symbol: "cpu", label: String(model.prefix(22))) {
+                        if !modelChip.isEmpty {
+                            FooterChip(symbol: "cpu", label: String(modelChip.prefix(22))) {
                                 showModels.toggle(); showPrompts = false; showProfiles = false; showReasoning = false
                             }
                         }

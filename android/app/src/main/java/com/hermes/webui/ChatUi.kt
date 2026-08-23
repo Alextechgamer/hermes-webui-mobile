@@ -384,6 +384,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
     val workspace = vm.spaces.firstOrNull { it.last }?.name ?: vm.fsRoot.value.substringAfterLast('/').ifBlank { "Home" }
     val profile = vm.activeProfile.value.ifBlank { "default" }
     val model = vm.selectedModel.value.ifBlank { vm.models.firstOrNull()?.id.orEmpty() }
+    val modelChip = ModelIds.forSend(model, vm.models.firstOrNull { it.id == model }?.provider.orEmpty())
 
     Column(Modifier.fillMaxWidth().background(Wui.Bg).padding(12.dp, 6.dp, 12.dp, 12.dp)) {
         if (vm.listening.value) Text("Listening — tap mic to stop", color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
@@ -472,7 +473,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 Box(Modifier.width(1.dp).height(16.dp).background(Wui.Border))
                 FooterChip(Icons.Outlined.Person, profile) { showProfiles = !showProfiles }
                 FooterChip(Icons.Outlined.Folder, workspace) { vm.go(Panel.Files) }
-                if (model.isNotBlank()) FooterChip(Icons.Outlined.Memory, model.take(22)) { showModels = !showModels }
+                if (modelChip.isNotBlank()) FooterChip(Icons.Outlined.Memory, modelChip.take(22)) { showModels = !showModels }
                 FooterChip(Icons.Outlined.Lightbulb, "Reason ${vm.reasoning.value.label()}") {
                     showReasoning = !showReasoning
                     showModels = false

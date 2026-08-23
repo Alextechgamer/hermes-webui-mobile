@@ -357,7 +357,8 @@ final class AppStore: ObservableObject {
                 sessionId: currentSid,
                 message: trimmed,
                 model: selectedModel.isEmpty ? nil : selectedModel,
-                attachments: attachments
+                attachments: attachments,
+                modelProvider: models.first(where: { $0.id == selectedModel })?.provider
             )
             if let stream = start.stream_id, !stream.isEmpty {
                 await attachStream(stream, replay: false)

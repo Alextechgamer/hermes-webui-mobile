@@ -193,9 +193,20 @@ class ApiClient(base: String, prefs: Prefs) {
         postRaw("/api/session/delete", """{"session_id":${q(sid)}}""")
     }
 
-    fun startChat(sid: String, message: String, model: String?, attachments: List<String> = emptyList()): String {
+    fun startChat(
+        sid: String,
+        message: String,
+        model: String?,
+        attachments: List<String> = emptyList(),
+        modelProvider: String? = null,
+    ): String {
         val parts = mutableListOf("\"session_id\":${q(sid)}", "\"message\":${q(message)}")
-        if (!model.isNullOrBlank()) parts += "\"model\":${q(model)}"
+        val sendModel = if (model.isNullOrBlank()) null else ModelIds.forSend(model, modelProvider.orEmpty())
+        if (!sendModel.isNullOrBlank()) {
+            parts += "\"model\":${q(sendModel)}"
+            parts += "\"explicit_model_pick\":true"
+        }
+        if (!modelProvider.isNullOrBlank()) parts += "\"model_provider\":${q(modelProvider)}"
         if (attachments.isNotEmpty()) parts += "\"attachments\":[" + attachments.joinToString(",") { q(it) } + "]"
         val el = json.parseToJsonElement(exec(req("POST", "/api/chat/start", "{" + parts.joinToString(",") + "}"))).asObj()
         return el.str("stream_id")
