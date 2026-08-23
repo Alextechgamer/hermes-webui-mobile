@@ -82,7 +82,7 @@ struct KanbanColumn: Identifiable {
     var tasks: [KanbanTask]
 }
 
-struct KanbanTask: Identifiable {
+struct KanbanTask: Identifiable, Equatable {
     var id: String
     var title: String
     var status: String

@@ -40,8 +40,10 @@ the migration row.
 ## Sessions / drawer
 
 - [ ] **Rail order** — Chat · Tasks · Kanban · Skills · Memory · Spaces ·
-  Profiles · Todos · Insights · Logs · Settings. No Files/Terminal/Dashboard
-  rows.
+  Profiles · Todos · Insights · Logs · **Dashboard** · Settings. Files and
+  Terminal stay off the rail (composer chips). Kanban on iOS has the same
+  board switcher / search / assignee filters / add / complete / archive as
+  Android — not tap-to-advance columns.
 - [ ] **Conversations dropdown** — collapsed by default, `Conversations · N`
   count is the real message-bearing count (not 0), expand state survives
   app restart.

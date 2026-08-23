@@ -25,6 +25,17 @@ final class AppStore: ObservableObject {
     @Published var reasoning = ReasoningStatus()
     @Published var jobs: [CronJob] = []
     @Published var columns: [KanbanColumn] = []
+    @Published var kanbanBoards: [KanbanBoardMeta] = []
+    @Published var kanbanBoard = ""
+    @Published var kanbanSearch = ""
+    @Published var kanbanAssignee = ""
+    @Published var kanbanTenant = ""
+    @Published var kanbanArchived = false
+    @Published var kanbanMine = false
+    @Published var kanbanDraft = ""
+    @Published var kanbanOpen: KanbanTask?
+    @Published var kanbanStats = KanbanStats()
+    @Published var kanbanAssignees: [String] = []
     @Published var skills: [SkillRow] = []
     @Published var skillBody = ""
     @Published var memory = MemoryDoc()
@@ -247,7 +258,7 @@ final class AppStore: ObservableObject {
             switch panel {
             case .chat: await loadSessions()
             case .tasks: jobs = try await c.crons()
-            case .kanban: columns = try await c.kanban()
+            case .kanban: await loadKanban()
             case .skills: skills = try await c.skills()
             case .memory: memory = try await c.memory()
             case .spaces: spaces = try await c.spaces()
@@ -734,9 +745,55 @@ final class AppStore: ObservableObject {
 
     func loadJobOutput(_ id: String) async { jobOutput = await client?.cronOutput(id: id) ?? "" }
 
+    func loadKanban() async {
+        guard let c = client else { return }
+        error = nil
+        let (cur, boards) = await c.kanbanBoards()
+        kanbanBoards = boards
+        if kanbanBoard.isEmpty || !boards.contains(where: { $0.slug == kanbanBoard }) {
+            kanbanBoard = cur.isEmpty ? (boards.first?.slug ?? "") : cur
+        }
+        do {
+            columns = try await c.kanban(
+                board: kanbanBoard,
+                assignee: kanbanAssignee,
+                tenant: kanbanTenant,
+                includeArchived: kanbanArchived,
+                onlyMine: kanbanMine
+            )
+            kanbanStats = await c.kanbanStats(board: kanbanBoard)
+            kanbanAssignees = await c.kanbanAssignees(board: kanbanBoard)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func switchKanbanBoard(_ slug: String) async {
+        kanbanBoard = slug
+        await client?.switchKanbanBoard(slug)
+        await loadKanban()
+    }
+
+    func createKanbanTask() async {
+        let title = kanbanDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        kanbanDraft = ""
+        await client?.createKanbanTask(title: title, board: kanbanBoard)
+        await loadKanban()
+    }
+
+    func dispatchKanban(dry: Bool) async {
+        await client?.dispatchKanban(board: kanbanBoard, dryRun: dry)
+        await loadKanban()
+    }
+
     func moveTask(_ id: String, _ status: String) async {
-        await client?.moveKanban(id: id, status: status)
-        await loadPanel()
+        await client?.moveKanban(id: id, status: status, board: kanbanBoard)
+        await loadKanban()
+        if var open = kanbanOpen, open.id == id {
+            if status == "archived" { kanbanOpen = nil }
+            else { open.status = status; kanbanOpen = open }
+        }
     }
 
     func toggleSkill(_ row: SkillRow) async {
