@@ -1,7 +1,7 @@
 # Android — native Hermes WebUI
 
 Jetpack Compose client. **No WebView.** Same APIs as the iOS app
-(`docs/API.md`). Version **0.9.13**.
+(`docs/API.md`). Version **0.9.14**.
 
 ```bash
 echo "sdk.dir=$ANDROID_HOME" > local.properties

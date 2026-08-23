@@ -3,6 +3,37 @@ import SwiftUI
 private let kanbanStatuses = ["triage", "todo", "ready", "running", "blocked", "done"]
 private let kanbanUnassigned = "__unassigned__"
 
+struct TasksPane: View {
+    @ObservedObject var store: AppStore
+    @State private var open: String?
+    var body: some View {
+        List {
+            Text("Scheduled jobs — same /api/crons as the desktop Tasks tab")
+                .font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
+            ForEach(store.jobs) { job in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(job.name).foregroundColor(Palette.text)
+                    Text([job.schedule, job.paused ? "paused" : (job.enabled ? "on" : "off"), job.owner].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption).foregroundColor(Palette.muted)
+                    if !job.readOnly {
+                        HStack {
+                            Button("Run") { Task { await store.cronAction(job.id, "run") } }
+                            Button(job.paused ? "Resume" : "Pause") { Task { await store.cronAction(job.id, job.paused ? "resume" : "pause") } }
+                            Button("Output") { open = job.id; Task { await store.loadJobOutput(job.id) } }
+                        }.foregroundColor(Palette.accent).font(.caption)
+                    }
+                    if open == job.id, !store.jobOutput.isEmpty {
+                        Text(String(store.jobOutput.prefix(4000))).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+                    }
+                }
+                .listRowBackground(Palette.surface)
+            }
+            if store.jobs.isEmpty { Text("No cron jobs.").foregroundColor(Palette.muted).listRowBackground(Palette.bg) }
+        }
+        .scrollContentBackground(.hidden).background(Palette.bg)
+    }
+}
+
 struct KanbanPane: View {
     @ObservedObject var store: AppStore
     @State private var boardsOpen = false
