@@ -59,7 +59,13 @@ final class APIClient {
                 if !pw.isEmpty {
                     do {
                         try await login(password: pw)
-                        return try await execute(req, retryAuth: false)
+                        // login() refreshed the CSRF token; the original request still
+                        // carries the stale header, so rewrite it before retrying.
+                        var retryReq = req
+                        if !csrf.isEmpty {
+                            retryReq.setValue(csrf, forHTTPHeaderField: "X-Hermes-CSRF-Token")
+                        }
+                        return try await execute(retryReq, retryAuth: false)
                     } catch {
                         onAuthLost?()
                         throw URLError(.userAuthenticationRequired)
