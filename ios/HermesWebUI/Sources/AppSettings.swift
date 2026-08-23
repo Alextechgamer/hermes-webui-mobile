@@ -7,21 +7,32 @@ final class AppSettings: ObservableObject {
     @AppStorage("dashboardURL") var dashboardURL: String = ""
     @AppStorage("lastSid") var lastSid: String = ""
     @AppStorage("lastStreamId") var lastStreamId: String = ""
-    @AppStorage("webuiPassword") private var storedPassword: String = ""
     @AppStorage("chatsExpanded") var chatsExpanded: Bool = false
 
+    init() {
+        Self.migratePasswordFromDefaults()
+    }
+
+    /// Keychain is the only store. UserDefaults `webuiPassword` is migrated then deleted.
     var password: String {
         get {
-            if !storedPassword.isEmpty { return storedPassword }
-            if let kc = WebUIKeychain.read(), !kc.isEmpty {
-                storedPassword = kc
-                return kc
-            }
-            return ""
+            Self.migratePasswordFromDefaults()
+            return WebUIKeychain.read() ?? ""
         }
         set {
-            storedPassword = newValue
             WebUIKeychain.write(newValue)
+            UserDefaults.standard.removeObject(forKey: "webuiPassword")
+        }
+    }
+
+    static func migratePasswordFromDefaults() {
+        let ud = UserDefaults.standard
+        let old = ud.string(forKey: "webuiPassword") ?? ""
+        if !old.isEmpty, (WebUIKeychain.read() ?? "").isEmpty {
+            WebUIKeychain.write(old)
+        }
+        if ud.object(forKey: "webuiPassword") != nil {
+            ud.removeObject(forKey: "webuiPassword")
         }
     }
 

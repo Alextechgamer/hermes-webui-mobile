@@ -7,6 +7,9 @@ final class APIClient {
     private var csrf: String = ""
     private let session: URLSession
 
+    var passwordProvider: () -> String = { "" }
+    var onAuthLost: (() -> Void)?
+
     init(baseURL: URL) {
         self.baseURL = baseURL
         let cfg = URLSessionConfiguration.default
@@ -35,24 +38,39 @@ final class APIClient {
     }
 
     func getData(_ path: String) async throws -> Data {
-        let (data, resp) = try await session.data(for: request("GET", path))
-        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if http.statusCode == 401 { throw URLError(.userAuthenticationRequired) }
-        guard (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        return data
+        try await execute(request("GET", path), retryAuth: true)
     }
 
-    func sendJSON(_ method: String, _ path: String, body: [String: Any]) async throws -> Data {
+    func sendJSON(_ method: String, _ path: String, body: [String: Any], retryAuth: Bool = true) async throws -> Data {
         let json = try JSONSerialization.data(withJSONObject: body)
-        let (data, resp) = try await session.data(for: request(method, path, json: json))
-        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if http.statusCode == 401 { throw URLError(.userAuthenticationRequired) }
-        guard (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        return data
+        return try await execute(request(method, path, json: json), retryAuth: retryAuth)
     }
 
     func postJSON(_ path: String, body: [String: Any]) async throws -> Data {
         try await sendJSON("POST", path, body: body)
+    }
+
+    private func execute(_ req: URLRequest, retryAuth: Bool) async throws -> Data {
+        let (data, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 401 {
+            if retryAuth {
+                let pw = passwordProvider()
+                if !pw.isEmpty {
+                    do {
+                        try await login(password: pw)
+                        return try await execute(req, retryAuth: false)
+                    } catch {
+                        onAuthLost?()
+                        throw URLError(.userAuthenticationRequired)
+                    }
+                }
+            }
+            onAuthLost?()
+            throw URLError(.userAuthenticationRequired)
+        }
+        guard (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+        return data
     }
 
     func authStatus() async throws -> AuthStatus {
@@ -60,7 +78,7 @@ final class APIClient {
     }
 
     func login(password: String) async throws {
-        _ = try await postJSON("/api/auth/login", body: ["password": password])
+        _ = try await sendJSON("POST", "/api/auth/login", body: ["password": password], retryAuth: false)
         try await refreshCSRF()
     }
 
@@ -101,8 +119,8 @@ final class APIClient {
             row.raw_id = str(d, "id")
             row.title = first(d, "title")
             row.preview = first(d, "preview", "snippet", "last_message")
-            row.messages = int(d, "messages")
-            row.message_count = int(d, "message_count")
+            row.messages = intOpt(d, "messages")
+            row.message_count = intOpt(d, "message_count")
             row.source = first(d, "source")
             row.updated_at = first(d, "updated_at")
             row.model = first(d, "model")
@@ -113,7 +131,7 @@ final class APIClient {
 
     func loadSession(id: String, full: Bool = false) async throws -> SessionLoad {
         let qid = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
-        let extra = full ? "&full=1" : "&msg_limit=200"
+        let extra = full ? "&full=1" : "&msg_limit=80"
         let data = try await getData("/api/session?session_id=\(qid)&messages=1&resolve_model=0\(extra)")
         let obj = (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
         let sess = obj["session"] as? [String: Any] ?? obj
@@ -788,10 +806,14 @@ final class APIClient {
         return def
     }
     private func int(_ d: [String: Any], _ k: String) -> Int {
-        if let n = d[k] as? Int { return n }
-        if let n = d[k] as? Double { return Int(n) }
-        if let s = d[k] as? String { return Int(s) ?? 0 }
-        return 0
+        intOpt(d, k) ?? 0
+    }
+    private func intOpt(_ d: [String: Any], _ k: String) -> Int? {
+        guard let v = d[k], !(v is NSNull) else { return nil }
+        if let n = v as? Int { return n }
+        if let n = v as? NSNumber { return n.intValue }
+        if let s = v as? String { return Int(s) }
+        return nil
     }
     private func double(_ d: [String: Any], _ k: String) -> Double {
         if let n = d[k] as? Double { return n }

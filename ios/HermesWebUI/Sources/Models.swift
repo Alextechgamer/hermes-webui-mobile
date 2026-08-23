@@ -6,7 +6,7 @@ struct AuthStatus: Codable {
     var password_auth_enabled: Bool = false
 }
 
-struct SessionRow: Codable, Identifiable {
+struct SessionRow: Identifiable {
     var session_id: String? = nil
     var raw_id: String? = nil
     var title: String? = nil
@@ -18,21 +18,16 @@ struct SessionRow: Codable, Identifiable {
     var model: String? = nil
     var pinned: Bool? = nil
 
-    enum CodingKeys: String, CodingKey {
-        case session_id, title, preview, message_count, messages, source, updated_at, model, pinned
-        case raw_id = "id"
-    }
-
     var sid: String { session_id ?? raw_id ?? "" }
     var id: String { sid }
     var displayTitle: String {
         let t = (title ?? "").trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? "New conversation" : t
     }
-    var msgCount: Int { message_count ?? messages ?? 0 }
+    var msgCount: Int { messages ?? message_count ?? 0 }
 }
 
-struct SessionList: Codable {
+struct SessionList {
     var sessions: [SessionRow]? = nil
     var data: [SessionRow]? = nil
     var items: [SessionRow]? { sessions ?? data }

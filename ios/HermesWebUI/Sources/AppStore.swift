@@ -78,7 +78,16 @@ final class AppStore: ObservableObject {
     private var outbound: [(String, [String])] = []
 
     func attach(url: URL) {
-        client = APIClient(baseURL: url)
+        let c = APIClient(baseURL: url)
+        c.passwordProvider = { WebUIKeychain.read() ?? "" }
+        c.onAuthLost = { [weak self] in
+            Task { @MainActor in
+                self?.needsLogin = true
+                self?.loggedIn = false
+                self?.ready = false
+            }
+        }
+        client = c
     }
 
     func bootstrap() async {
@@ -92,8 +101,8 @@ final class AppStore: ObservableObject {
             loggedIn = st.logged_in || !st.auth_enabled
             needsLogin = st.auth_enabled && !st.logged_in
             if needsLogin {
-                var pw = UserDefaults.standard.string(forKey: "webuiPassword") ?? ""
-                if pw.isEmpty { pw = WebUIKeychain.read() ?? "" }
+                AppSettings.migratePasswordFromDefaults()
+                let pw = WebUIKeychain.read() ?? ""
                 if !pw.isEmpty {
                     do {
                         try await c.login(password: pw)
@@ -133,8 +142,8 @@ final class AppStore: ObservableObject {
         error = nil
         do {
             try await c.login(password: password)
-            UserDefaults.standard.set(password, forKey: "webuiPassword")
             WebUIKeychain.write(password)
+            UserDefaults.standard.removeObject(forKey: "webuiPassword")
             needsLogin = false
             loggedIn = true
             ready = true
@@ -252,7 +261,6 @@ final class AppStore: ObservableObject {
             case .terminal: break
             case .insights:
                 await loadConsole()
-                if let i = try? await c.insights() { insights = i }
             case .logs: logLines = try await c.logs(file: logFile)
             case .dashboard:
                 await loadConsole()
@@ -321,8 +329,14 @@ final class AppStore: ObservableObject {
                 outbound.append((payload, files))
                 return
             }
-            let ok = await client?.steer(sessionId: currentSid, text: payload) ?? false
-            if !ok { outbound.append((payload, files)) }
+            if !trimmed.isEmpty {
+                let ok = await client?.steer(sessionId: currentSid, text: payload) ?? false
+                if !ok && files.isEmpty { outbound.append((payload, [])) }
+                else if !ok && !files.isEmpty { outbound.append((payload, files)) }
+                else if ok && !files.isEmpty { outbound.append(("See attached files.", files)) }
+            } else if !files.isEmpty {
+                outbound.append((payload, files))
+            }
             return
         }
         await startTurn(payload, files)
@@ -508,7 +522,7 @@ final class AppStore: ObservableObject {
         } else if ev.contains("tool") {
             let name = (obj["name"] as? String) ?? (obj["tool"] as? String) ?? (obj["function"] as? String) ?? "tool"
             let preview = (obj["preview"] as? String) ?? (obj["snippet"] as? String) ?? (obj["result"] as? String) ?? (obj["output"] as? String) ?? (obj["text"] as? String) ?? ""
-            let done = ev.contains("done") || ev.contains("result") || ev.contains("end") || (obj["done"] as? String) == "true"
+            let done = ev.contains("done") || ev.contains("result") || ev.contains("end") || jsonFlag(obj["done"])
             if let idx = messages.lastIndex(where: { $0.role == "tool" && $0.tool == name && $0.running }) {
                 if !preview.isEmpty {
                     messages[idx].preview = preview
@@ -784,7 +798,7 @@ final class AppStore: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard let self, let c = self.client, self.loggedIn else { continue }
-                if self.panel == .dashboard { await self.loadConsole() }
+                if self.panel == .dashboard || self.panel == .insights { await self.loadConsole() }
                 guard !self.currentSid.isEmpty else { continue }
                 let a = await c.approval(sid: self.currentSid)
                 let q = await c.clarify(sid: self.currentSid)
@@ -803,6 +817,9 @@ final class AppStore: ObservableObject {
         }
     }
 
+    private var sessionStreamBackoff: UInt64 = 1_500_000_000
+    private var listStreamBackoff: UInt64 = 2_000_000_000
+
     private func listenForSession() {
         guard let c = client, !currentSid.isEmpty else { return }
         sessionTask?.cancel()
@@ -812,6 +829,7 @@ final class AppStore: ObservableObject {
                 await c.streamSession(sid: sid, knownCount: self?.messages.count ?? 0) { ev, data in
                     Task { @MainActor in
                         guard let self else { return }
+                        self.sessionStreamBackoff = 1_500_000_000
                         let e = ev.lowercased()
                         let obj = (data.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
                         if e == "server_turn_started" {
@@ -824,7 +842,11 @@ final class AppStore: ObservableObject {
                         }
                     }
                 }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                let wait = await MainActor.run { self?.sessionStreamBackoff ?? 1_500_000_000 }
+                try? await Task.sleep(nanoseconds: wait)
+                await MainActor.run {
+                    self?.sessionStreamBackoff = min(wait * 2, 30_000_000_000)
+                }
             }
         }
     }
@@ -835,11 +857,18 @@ final class AppStore: ObservableObject {
         listTask = Task { [weak self] in
             while !Task.isCancelled {
                 await c.streamSessionList { ev, _ in
+                    Task { @MainActor in
+                        self?.listStreamBackoff = 2_000_000_000
+                    }
                     if ev.contains("session") || ev.isEmpty || ev == "sessions_changed" {
                         Task { await self?.loadSessions() }
                     }
                 }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                let wait = await MainActor.run { self?.listStreamBackoff ?? 2_000_000_000 }
+                try? await Task.sleep(nanoseconds: wait)
+                await MainActor.run {
+                    self?.listStreamBackoff = min(wait * 2, 30_000_000_000)
+                }
             }
         }
     }
@@ -857,6 +886,13 @@ final class AppStore: ObservableObject {
             bgTask = .invalid
         }
     }
+}
+
+private func jsonFlag(_ any: Any?) -> Bool {
+    if let b = any as? Bool { return b }
+    if let n = any as? NSNumber { return n.boolValue }
+    if let s = any as? String { return s == "true" || s == "1" }
+    return false
 }
 
 private func stripAnsi(_ s: String) -> String {

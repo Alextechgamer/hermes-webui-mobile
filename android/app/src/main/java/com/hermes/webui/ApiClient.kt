@@ -69,7 +69,13 @@ private class PersistentCookieJar(private val prefs: Prefs) : CookieJar {
     }
 
     @Synchronized
-    override fun loadForRequest(url: HttpUrl): List<Cookie> = store.toList()
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val now = System.currentTimeMillis()
+        val before = store.size
+        store.removeAll { it.expiresAt < now }
+        if (store.size != before) persist()
+        return store.filter { it.matches(url) }
+    }
 
     private fun persist() {
         val recs = store.map {
@@ -824,7 +830,7 @@ private fun JsonObject.anyToString(vararg keys: String): String {
 private fun JsonObject.toSession(): SessionRow? {
     val sid = str("session_id", "id")
     if (sid.isBlank()) return null
-    val count = int("messages").takeIf { it > 0 } ?: int("message_count")
+    val count = JsonText.sessionCount(intOrNull("messages"), intOrNull("message_count"))
     return SessionRow(
         sid = sid,
         title = str("title"),
@@ -839,7 +845,7 @@ private fun JsonObject.toSession(): SessionRow? {
 private fun JsonObject.toChatRows(): List<ChatMsg> {
     val role = str("role").ifBlank { "assistant" }
     val id = str("id").ifBlank { "${role}-${contentHash()}" }
-    val content = str("content", "text")
+    val content = JsonText.value(this["content"]).ifBlank { JsonText.value(this["text"]) }
     val tool = str("tool_name", "name", "tool")
     val out = mutableListOf<ChatMsg>()
     arr("tool_calls")?.forEachIndexed { i, el ->
@@ -867,8 +873,13 @@ private fun JsonObject.toChatRows(): List<ChatMsg> {
     return out
 }
 
+private fun JsonObject.intOrNull(key: String): Int? {
+    val v = this[key] as? JsonPrimitive ?: return null
+    return v.intOrNull ?: v.longOrNull?.toInt() ?: v.contentOrNull?.toIntOrNull()
+}
+
 private fun JsonObject.contentHash(): String =
-    (str("content") + roleHint()).hashCode().toString()
+    (JsonText.value(this["content"]) + roleHint()).hashCode().toString()
 
 private fun JsonObject.roleHint(): String = str("role")
 

@@ -273,26 +273,6 @@ fun TodosPane(vm: AppVm) {
 }
 
 @Composable
-fun InsightsPane(vm: AppVm) {
-    val i = vm.insights.value
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        ErrLine(vm)
-        Text("Insights · last ${i.days} days", color = Wui.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(12.dp))
-        Stat("Sessions", i.sessions.toString())
-        Stat("Messages", i.messages.toString())
-        Stat("Tokens", i.tokens.toString())
-        Stat("Cost", "$" + "%.4f".format(i.cost))
-        i.cacheHit?.let { Stat("Cache hit", "${"%.1f".format(it)}%") }
-        Spacer(Modifier.height(12.dp))
-        Text("Models", color = Wui.Accent)
-        i.models.forEach { m ->
-            Text("${m.model} · ${m.sessions} sessions · ${m.tokens} tok · $${"%.4f".format(m.cost)}", color = Wui.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-        }
-    }
-}
-
-@Composable
 fun LogsPane(vm: AppVm) {
     Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
@@ -312,15 +292,5 @@ fun LogsPane(vm: AppVm) {
                 Text(vm.logLines[idx], color = Wui.Text, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
             }
         }
-    }
-}
-
-
-
-@Composable
-private fun Stat(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Wui.Muted)
-        Text(value, color = Wui.Text, fontWeight = FontWeight.SemiBold)
     }
 }

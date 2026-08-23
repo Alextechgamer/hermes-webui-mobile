@@ -250,10 +250,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     Panel.Todos -> if (sid.isNotBlank()) open(sid, keepPanel = true)
                     Panel.Files -> loadFiles(fsPath.value)
                     Panel.Terminal -> { }
-                    Panel.Insights -> {
-                        insights.value = withContext(Dispatchers.IO) { runCatching { c.insights() }.getOrDefault(Insights()) }
-                        loadConsole(includeConfig = true)
-                    }
+                    Panel.Insights -> loadConsole(includeConfig = true)
                     Panel.Logs -> {
                         val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
                         logLines.clear(); logLines.addAll(lines)
@@ -431,9 +428,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     outbound.addLast(t.ifBlank { "(attachments)" } to files)
                     return@launch
                 }
-                val text = t.ifBlank { "See attached files." }
-                val ok = withContext(Dispatchers.IO) { runCatching { c.steer(sid, text) }.getOrDefault(false) }
-                if (!ok) outbound.addLast(text to files)
+                val steerText = t.ifBlank { "See attached files." }
+                if (t.isNotEmpty()) {
+                    val ok = withContext(Dispatchers.IO) { runCatching { c.steer(sid, steerText) }.getOrDefault(false) }
+                    when {
+                        !ok && files.isEmpty() -> outbound.addLast(steerText to emptyList())
+                        !ok && files.isNotEmpty() -> outbound.addLast(steerText to files)
+                        ok && files.isNotEmpty() -> outbound.addLast("See attached files." to files)
+                    }
+                } else if (files.isNotEmpty()) {
+                    outbound.addLast(steerText to files)
+                }
             }
             return
         }
@@ -784,11 +789,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private var sessionStreamBackoff = 1_500L
+    private var listStreamBackoff = 2_000L
+
     private fun attachSessionStream() {
         val c = api ?: return
         if (sid.isBlank()) return
         sessionEs?.cancel()
         sessionEs = c.streamSession(sid, bubbles.size, { ev, data ->
+            sessionStreamBackoff = 1_500L
             val e = ev.lowercase()
             val obj = runCatching { Json.parseToJsonElement(data).jsonObject }.getOrNull()
             when {
@@ -804,7 +813,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
         }, {
             viewModelScope.launch {
-                delay(1500)
+                delay(sessionStreamBackoff)
+                sessionStreamBackoff = (sessionStreamBackoff * 2).coerceAtMost(30_000L)
                 if (ready.value && sid.isNotBlank()) attachSessionStream()
             }
         })
@@ -814,12 +824,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         listEs?.cancel()
         listEs = c.streamSessionList({ ev, _ ->
+            listStreamBackoff = 2_000L
             if (ev.contains("session") || ev.isEmpty() || ev == "sessions_changed") {
                 refreshSessions()
             }
         }, {
             viewModelScope.launch {
-                delay(2000)
+                delay(listStreamBackoff)
+                listStreamBackoff = (listStreamBackoff * 2).coerceAtMost(30_000L)
                 if (ready.value) attachListStream()
             }
         })

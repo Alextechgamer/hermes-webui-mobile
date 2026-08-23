@@ -15,6 +15,7 @@ struct ChatPane: View {
     @State private var pickingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
+    @State private var atBottom = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,15 +73,20 @@ struct ChatPane: View {
                             row(ChatMessage(id: "live", role: "assistant", content: store.liveText), live: true).id("live")
                         }
                         Color.clear.frame(height: 12).id("bottom")
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 16)
                     }
                     .onAppear { jumpToLatest(proxy) }
-                    .onChange(of: store.liveText) { _ in jumpToLatest(proxy) }
-                    .onChange(of: store.messages.count) { _ in jumpToLatest(proxy) }
-                    .onChange(of: store.messages.last?.id) { _ in jumpToLatest(proxy) }
-                    if !store.messages.isEmpty {
-                        Button { jumpToLatest(proxy) } label: {
+                    .onChange(of: store.liveText) { _ in if atBottom { jumpToLatest(proxy) } }
+                    .onChange(of: store.messages.count) { _ in if atBottom { jumpToLatest(proxy) } }
+                    .onChange(of: store.messages.last?.id) { _ in if atBottom { jumpToLatest(proxy) } }
+                    if !store.messages.isEmpty && !atBottom {
+                        Button {
+                            atBottom = true
+                            jumpToLatest(proxy)
+                        } label: {
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(Palette.accent)

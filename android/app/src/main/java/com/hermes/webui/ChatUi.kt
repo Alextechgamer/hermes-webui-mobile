@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -123,7 +124,7 @@ fun ChatPane(vm: AppVm) {
                     }
                 }
                 if (vm.bubbles.isEmpty() && vm.live.value.isEmpty()) {
-                    item { EmptyChat() }
+                    item { EmptyChat(vm) }
                 }
                 itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b ->
                     MessageRow(vm, b)
@@ -164,19 +165,40 @@ fun ChatPane(vm: AppVm) {
 }
 
 @Composable
-private fun EmptyChat() {
+private fun EmptyChat(vm: AppVm) {
     Column(
         Modifier.fillMaxWidth().padding(top = 72.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("What can I help with?", color = Wui.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Same live chat as desktop Hermes WebUI. Type below — no refresh.",
-            color = Wui.Muted,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
+        if (vm.sessions.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            Text("Recent conversations", color = Wui.Muted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            vm.sessions.take(12).forEach { row ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Wui.Surface)
+                        .clickable { vm.open(row) }
+                        .padding(10.dp),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(row.displayTitle, color = Wui.Text)
+                    Text("${row.msgCount} messages", color = Wui.Muted, fontSize = 12.sp)
+                }
+            }
+        } else {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Same live chat as desktop Hermes WebUI. Type below — no refresh.",
+                color = Wui.Muted,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
     }
 }
 

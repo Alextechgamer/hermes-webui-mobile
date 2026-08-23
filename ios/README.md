@@ -1,7 +1,7 @@
 # iOS — native Hermes WebUI (Mac + Xcode)
 
 SwiftUI client for hermes-webui. **No WebView.** Same REST+SSE contract as
-Android (`docs/API.md`). Marketing version **0.9.5**. Launcher icon is the
+Android (`docs/API.md`). Marketing version **0.9.8**. Launcher icon is the
 official Hermes caduceus (`Assets.xcassets/AppIcon`).
 
 ```bash
@@ -9,8 +9,8 @@ git pull
 cd ios && ./setup.sh && open HermesWebUI.xcodeproj
 ```
 
-First launch: enter WebUI URL (placeholder `http://192.168.1.20:8787`). Then
-password if the server requires it. Login is remembered.
+First launch: enter WebUI URL (placeholder `http://host:8787`). Then
+password if the server requires it. Login is remembered in the Keychain only.
 
 Rail: Chat, Tasks, Kanban, Skills, Memory, Spaces, Profiles, Todos,
 Insights, Logs, Settings. Conversations nest under Chat. Files / Terminal /

@@ -15,9 +15,11 @@ Auth is cookie + CSRF. No bearer token.
 - `POST /api/session/new` → `{session_id}`
 - `GET /api/session?session_id=&messages=1&resolve_model=0&msg_limit=80`
   - messages live at `session.messages` or top-level `messages`
+  - `content` may be a string **or** a parts array (`[{text,content,value}, …]`) — flatten/join
   - huge sidecars auto-tail unless `full=1`
   - `_messages_truncated` / `todo_state` may be present
-- `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`)
+- `POST /api/chat/start` **requires** `session_id` + `message` (optional `model`, `attachments`)
+- `POST /api/chat/steer` `{session_id,text}` → `{accepted}` — mid-run user text. Do **not** treat this as a new user bubble; render a STEER card. Attachments cannot go on steer — queue them for the next turn.
 - `GET /api/reasoning?model=&provider=` → `{reasoning_effort, supported_efforts, supports_thinking_toggle}`
 - `POST /api/reasoning` `{effort, model?, provider?}` — same keys as desktop composer
 - `GET /api/chat/stream?stream_id=` SSE event `token` `{text}`
@@ -40,6 +42,15 @@ Auth is cookie + CSRF. No bearer token.
 - `GET /api/clarify/pending?session_id=`
 - `POST /api/clarify/respond` `{session_id, clarify_id, response}`
 
+## Other endpoints both apps use
+
+- `GET /api/models` — composer model list
+- `GET /api/prompts` — saved prompt chips
+- `GET /api/skills/content?name=` — skill body
+- `GET /api/crons/output?job_id=` — last cron output
+- `GET /api/transcribe/capability` → `{available}`
+- `POST /api/upload` multipart `session_id` + `file` → `{path,filename,mime,is_image}`
+
 ## Panels (same rail as desktop)
 
 | Panel | GET | writes |
@@ -51,11 +62,11 @@ Auth is cookie + CSRF. No bearer token.
 | Spaces | `/api/workspaces` `{workspaces,last}` | — |
 | Profiles | `/api/profiles` `{profiles,active}` | `/api/profile/switch` `{name}` |
 | Todos | from session `todo_state` / last tool `{todos}` | — |
-| Insights | `/api/insights?days=30` | — |
+| Insights | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` (plans + model rates). **Not** `/api/insights`. | — |
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
-| Dashboard / Insights | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` (plans + model rates) | — |
+| Dashboard | same Console as Insights; not a rail item | — |
 | Settings | `/api/settings` grouped as Conversation / Appearance / Preferences / System; `/api/providers`; `/api/plugins`; `/api/extensions/status` | `POST /api/settings`, `POST /api/providers` `{provider,api_key}` |
 
 ## Files / terminal / voice
@@ -74,3 +85,5 @@ Auth is cookie + CSRF. No bearer token.
 Mermaid is a **native subset** (flowchart / sequence / pie) drawn on Canvas —
 not mermaid.js. Terminal strips ANSI. Voice uses the server STT/TTS endpoints
 plus the device mic; it is not browser SpeechRecognition. No WebView.
+Transcript markdown (bold/links/code) and image thumbnails are not rendered;
+attachments show as name chips.
