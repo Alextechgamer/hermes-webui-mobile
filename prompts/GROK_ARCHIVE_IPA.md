@@ -1,23 +1,29 @@
-# Grok on Mac — archive IPA onto the existing v0.9.8 tag
+# Grok on Mac — archive IPA onto the existing v0.9.9 tag
 
 Paste everything below the line into Grok on the Apple Silicon Mac.
 
 ---
 
-You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.8`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
+You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.9`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
 
-Repo: https://github.com/Alextechgamer/hermes-webui-mobile  
-Tag already exists: `v0.9.8` (`d96c644` on `main`). Release already has `hermes-webui-0.9.8-debug.apk`.  
+Repo: https://github.com/Alextechgamer/hermes-webui-mobile
+Tag already exists: `v0.9.9` on `main`. Release already has `hermes-webui-0.9.9-debug.apk`.
 **Do not retag. Do not delete or replace the APK. Do not create a new release. Do not bump the version. Do not commit unless you must fix a local signing file that is gitignored.**
 
 THIS IS NOT A WEBVIEW. Do not add `WKWebView` / `UIWebView` / `SFSafariViewController` as product UI. Do not bake in any hostname, Tailscale IP, MagicDNS name, `/home/alex`, password, or Apple Team ID.
 
+## What this IPA must include (newer than 0.9.8)
+
+- **iOS CSRF refresh on 401 retry** — after `login()` refreshes CSRF, rewrite `X-Hermes-CSRF-Token` on the retried request (`APIClient.execute`). Do not resend the original request with the stale header.
+- Everything already in 0.9.8: Keychain-only password, real session counts, parts-array history, Steer, hamburger below the status bar, caduceus AppIcon, Insights = Console, reasoning chip, jump-to-latest.
+
+Confirm `ios/project.yml` is **0.9.9 (21)** before Archive. Confirm `APIClient.swift` rewrites CSRF on the 401 retry (`retryReq.setValue(csrf, forHTTPHeaderField: "X-Hermes-CSRF-Token")`).
+
 ## Hard checks before you archive
 
 1. `xcodebuild -version` works. Confirm an Apple ID team is available in Xcode (Signing & Capabilities). `ios/project.yml` has **no** `DEVELOPMENT_TEAM` — pick the team locally. Do not write a team id into git.
-2. `git clone` if needed, else `git fetch && git checkout main && git pull`. Confirm:
-   - `git rev-parse HEAD` is `d96c64440cf2d05e23551be0515585648e1240a6` (or later **only if** it is still version 0.9.8).
-   - `ios/project.yml` has `MARKETING_VERSION: "0.9.8"` and `CURRENT_PROJECT_VERSION: "20"`.
+2. `git clone` if needed, else `git fetch && git checkout main && git pull --ff-only`. Confirm:
+   - `ios/project.yml` has `MARKETING_VERSION: "0.9.9"` and `CURRENT_PROJECT_VERSION: "21"`.
    - `Info.plist` / generated project: `NSAllowsArbitraryLoads = true` and **does not** contain `NSAllowsLocalNetworking` (that combo blocks Tailscale `100.x` http).
 3. `cd ios && ./setup.sh` (installs XcodeGen via brew if missing, then `xcodegen generate`).
 4. `open HermesWebUI.xcodeproj` → target Hermes WebUI → Signing: Automatically manage signing → your Team. Bundle id `com.hermes.webui`.
@@ -27,8 +33,8 @@ THIS IS NOT A WEBVIEW. Do not add `WKWebView` / `UIWebView` / `SFSafariViewContr
 Prefer Xcode GUI if `ExportOptions.plist` is missing (do not invent a team id):
 
 - Product → Archive
-- Organizer → Distribute App → **Ad Hoc or Development** (same style as `hermes-webui-0.9.7.ipa`) → export
-- Rename the exported IPA to **`hermes-webui-0.9.8.ipa`**
+- Organizer → Distribute App → **Ad Hoc or Development** (same style as `hermes-webui-0.9.8.ipa`) → export
+- Rename the exported IPA to **`hermes-webui-0.9.9.ipa`**
 
 CLI only if a working `ExportOptions.plist` already exists locally (do not commit it):
 
@@ -45,7 +51,7 @@ xcodebuild -exportArchive \
   -exportOptionsPlist ExportOptions.plist \
   -allowProvisioningUpdates
 
-cp "$PWD/build/ipa/"*.ipa "$PWD/build/ipa/hermes-webui-0.9.8.ipa"
+cp "$PWD/build/ipa/"*.ipa "$PWD/build/ipa/hermes-webui-0.9.9.ipa"
 ```
 
 If export fails on signing, stop and say what Xcode printed. Do not fake an IPA (a 1 MB placeholder is not a real archive).
@@ -54,18 +60,18 @@ If export fails on signing, stop and say what Xcode printed. Do not fake an IPA 
 
 ```bash
 gh auth status
-gh release view v0.9.8
-gh release upload v0.9.8 hermes-webui-0.9.8.ipa
+gh release view v0.9.9
+gh release upload v0.9.9 hermes-webui-0.9.9.ipa
 ```
 
-Use the real path to the IPA. **Never** `--clobber` the APK. If `hermes-webui-0.9.8.ipa` is already on the release, stop and report; do not overwrite unless the existing asset is clearly a failed/empty upload.
+Use the real path to the IPA. **Never** `--clobber` the APK. If `hermes-webui-0.9.9.ipa` is already on the release, stop and report; do not overwrite unless the existing asset is clearly a failed/empty upload.
 
 Confirm with:
 
 ```bash
-gh release view v0.9.8 --json assets --jq '.assets[] | {name,size}'
+gh release view v0.9.9 --json assets --jq '.assets[] | {name,size}'
 ```
 
-You should see both `hermes-webui-0.9.8-debug.apk` (~18 MB) and `hermes-webui-0.9.8.ipa` (real archive, typically several MB, not a 1-line stub).
+You should see both `hermes-webui-0.9.9-debug.apk` (~18 MB) and `hermes-webui-0.9.9.ipa` (real archive, typically several MB, not a 1-line stub).
 
 Reply with the release URL and both asset names + sizes. Done.

@@ -3,7 +3,7 @@
 You are on Apple Silicon macOS. Build the native SwiftUI Hermes WebUI app from
 https://github.com/Alextechgamer/hermes-webui-mobile (or the local clone).
 
-**Pull `main` first.** Current source is **0.9.8** (`MARKETING_VERSION` in
+**Pull `main` first.** Current source is **0.9.9** (`MARKETING_VERSION` in
 `ios/project.yml`). THIS IS NOT A WEBVIEW. SwiftUI talks to hermes-webui
 REST+SSE. Contract: `docs/API.md`.
 
