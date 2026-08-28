@@ -190,6 +190,7 @@ struct RootView: View {
             case .files: FilesPane(store: store)
             case .terminal: TerminalPane(store: store)
             case .insights: InsightsPane(store: store)
+            case .console: DashboardPane(store: store)
             case .logs: LogsPane(store: store)
             case .settings: SettingsPane(store: store, settings: settings)
             }
@@ -371,6 +372,16 @@ struct DrawerBody: View {
                 .cornerRadius(12)
                 .padding(.vertical, 6)
 
+                HStack(spacing: 6) {
+                    sourceChip("WebUI" + (store.webuiSessionCount > 0 ? " (\(store.webuiSessionCount))" : ""), store.sessionSource.isEmpty) {
+                        Task { await store.setSessionSource("") }
+                    }
+                    sourceChip("CLI" + (store.cliSessionCount > 0 ? " (\(store.cliSessionCount))" : ""), store.sessionSource == "cli") {
+                        Task { await store.setSessionSource("cli") }
+                    }
+                }
+                .padding(.vertical, 4)
+
                 if filtered.isEmpty {
                     Text("No conversations yet.")
                         .font(.system(size: 12))
@@ -420,6 +431,16 @@ struct DrawerBody: View {
         return store.sessions.filter {
             $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q)
         }
+    }
+
+    private func sourceChip(_ label: String, _ sel: Bool, _ action: @escaping () -> Void) -> some View {
+        Text(label)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(sel ? Palette.accentText : Palette.muted)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(sel ? Palette.accentBg : Palette.surface)
+            .cornerRadius(8)
+            .onTapGesture(perform: action)
     }
 }
 

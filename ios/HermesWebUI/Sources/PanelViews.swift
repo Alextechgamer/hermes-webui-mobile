@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private let kanbanStatuses = ["triage", "todo", "ready", "running", "blocked", "done"]
 private let kanbanUnassigned = "__unassigned__"
@@ -6,20 +7,57 @@ private let kanbanUnassigned = "__unassigned__"
 struct TasksPane: View {
     @ObservedObject var store: AppStore
     @State private var open: String?
+    @State private var showNew = false
+    @State private var newName = ""
+    @State private var newSchedule = ""
+    @State private var newPrompt = ""
     var body: some View {
         List {
-            Text("Scheduled jobs — same /api/crons as the desktop Tasks tab")
-                .font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
+            HStack {
+                Text("Scheduled jobs").font(.caption).foregroundColor(Palette.muted)
+                Spacer()
+                Button("Refresh") { Task { await store.loadPanel() } }.font(.caption).foregroundColor(Palette.muted)
+                Button(showNew ? "Cancel" : "+ New job") { showNew.toggle() }.font(.caption).foregroundColor(Palette.accent)
+            }.listRowBackground(Palette.bg)
+            if showNew {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Name (optional)", text: $newName).foregroundColor(Palette.text)
+                    TextField("Schedule — e.g. 30m, every 2h, 0 9 * * *", text: $newSchedule).foregroundColor(Palette.text)
+                    TextField("Prompt", text: $newPrompt).foregroundColor(Palette.text)
+                    Button("Create job") {
+                        Task { await store.createCron(name: newName, schedule: newSchedule, prompt: newPrompt) }
+                        showNew = false; newName = ""; newSchedule = ""; newPrompt = ""
+                    }.foregroundColor(Palette.accent)
+                }.listRowBackground(Palette.surface)
+            }
             ForEach(store.jobs) { job in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(job.name).foregroundColor(Palette.text)
-                    Text([job.schedule, job.paused ? "paused" : (job.enabled ? "on" : "off"), job.owner].filter { !$0.isEmpty }.joined(separator: " · "))
+                    HStack {
+                        Text(job.name).foregroundColor(Palette.text)
+                        Spacer()
+                        Text(job.paused ? "paused" : (job.enabled ? "on" : "off"))
+                            .font(.caption)
+                            .foregroundColor(job.paused ? Palette.muted : (job.enabled ? Palette.ok : Palette.muted))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Palette.surface).cornerRadius(6)
+                    }
+                    Text([job.schedule, job.owner].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption).foregroundColor(Palette.muted)
+                    HStack {
+                        if !job.lastStatus.isEmpty {
+                            Text(job.lastStatus)
+                                .font(.caption)
+                                .foregroundColor(job.lastStatus.lowercased().contains("error") || job.lastStatus.lowercased().contains("fail") ? Palette.danger : Palette.ok)
+                        }
+                        if !job.lastRun.isEmpty { Text("last \(job.lastRun)").font(.caption).foregroundColor(Palette.muted) }
+                        if !job.nextRun.isEmpty { Text("next \(job.nextRun)").font(.caption).foregroundColor(Palette.muted) }
+                    }
                     if !job.readOnly {
                         HStack {
                             Button("Run") { Task { await store.cronAction(job.id, "run") } }
                             Button(job.paused ? "Resume" : "Pause") { Task { await store.cronAction(job.id, job.paused ? "resume" : "pause") } }
                             Button("Output") { open = job.id; Task { await store.loadJobOutput(job.id) } }
+                            Button("Delete") { Task { await store.deleteCron(job.id) } }.foregroundColor(Palette.danger)
                         }.foregroundColor(Palette.accent).font(.caption)
                     }
                     if open == job.id, !store.jobOutput.isEmpty {
@@ -300,31 +338,61 @@ private func kanbanLanes(_ columns: [KanbanColumn]) -> [(String, [KanbanColumn])
 struct SkillsPane: View {
     @ObservedObject var store: AppStore
     @State private var open: String?
+    @State private var query = ""
+    @State private var showNew = false
+    @State private var newName = ""
+    @State private var newCategory = ""
+    @State private var newContent = ""
     var body: some View {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let shown = store.skills.filter {
+            q.isEmpty || $0.name.lowercased().contains(q) || $0.description.lowercased().contains(q) || $0.category.lowercased().contains(q)
+        }
+        let grouped = Dictionary(grouping: shown, by: { $0.category.isEmpty ? "uncategorized" : $0.category })
         List {
-            Text("Installed skills — toggle writes the active profile")
-                .font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
-            ForEach(store.skills) { s in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(s.name).foregroundColor(Palette.text)
-                            if !s.category.isEmpty { Text(s.category).font(.caption).foregroundColor(Palette.accent) }
+            HStack {
+                Text("Installed skills").font(.caption).foregroundColor(Palette.muted)
+                Spacer()
+                Button(showNew ? "Cancel" : "+ New skill") { showNew.toggle() }.font(.caption).foregroundColor(Palette.accent)
+            }.listRowBackground(Palette.bg)
+            TextField("Search skills…", text: $query).foregroundColor(Palette.text).listRowBackground(Palette.surface)
+            if showNew {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Name (lowercase, hyphens)", text: $newName).foregroundColor(Palette.text)
+                    TextField("Category (optional)", text: $newCategory).foregroundColor(Palette.text)
+                    TextField("SKILL.md content", text: $newContent).foregroundColor(Palette.text)
+                    Button("Create skill") {
+                        Task { await store.saveSkill(name: newName, category: newCategory, content: newContent) }
+                        showNew = false; newName = ""; newCategory = ""; newContent = ""
+                    }.foregroundColor(Palette.accent)
+                }.listRowBackground(Palette.surface)
+            }
+            ForEach(grouped.keys.sorted(), id: \.self) { cat in
+                Section(header: Text("\(cat) (\(grouped[cat]!.count))").foregroundColor(Palette.accent)) {
+                    ForEach(grouped[cat]!) { s in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(s.name).foregroundColor(Palette.text)
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { !s.disabled },
+                                    set: { _ in Task { await store.toggleSkill(s) } }
+                                )).labelsHidden()
+                            }
+                            if !s.description.isEmpty { Text(s.description).font(.caption).foregroundColor(Palette.muted).lineLimit(3) }
+                            if open == s.name {
+                                Button("Delete skill") { Task { await store.deleteSkill(s.name); open = nil } }
+                                    .font(.caption).foregroundColor(Palette.danger)
+                                if !store.skillBody.isEmpty {
+                                    Text(String(store.skillBody.prefix(6000))).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+                                }
+                            }
                         }
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { !s.disabled },
-                            set: { _ in Task { await store.toggleSkill(s) } }
-                        )).labelsHidden()
-                    }
-                    if !s.description.isEmpty { Text(s.description).font(.caption).foregroundColor(Palette.muted).lineLimit(3) }
-                    if open == s.name, !store.skillBody.isEmpty {
-                        Text(String(store.skillBody.prefix(6000))).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+                        .contentShape(Rectangle())
+                        .onTapGesture { open = open == s.name ? nil : s.name; Task { await store.openSkill(s.name) } }
+                        .listRowBackground(Palette.surface)
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { open = s.name; Task { await store.openSkill(s.name) } }
-                .listRowBackground(Palette.surface)
             }
         }
         .scrollContentBackground(.hidden).background(Palette.bg)
@@ -374,36 +442,74 @@ struct MemoryPane: View {
 
 struct SpacesPane: View {
     @ObservedObject var store: AppStore
+    @State private var showAdd = false
+    @State private var newPath = ""
     var body: some View {
         List {
-            Text("Workspaces known to this WebUI").font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
-            ForEach(store.spaces) { s in
+            HStack {
+                Text("Add and switch workspaces for your sessions.").font(.caption).foregroundColor(Palette.muted)
+                Spacer()
+                Button(showAdd ? "Cancel" : "+ Add space") { showAdd.toggle() }.font(.caption).foregroundColor(Palette.accent)
+            }.listRowBackground(Palette.bg)
+            if showAdd {
                 VStack(alignment: .leading) {
-                    Text(s.name + (s.last ? " · last" : "")).foregroundColor(s.last ? Palette.accent : Palette.text)
-                    if !s.path.isEmpty { Text(s.path).font(.system(.caption, design: .monospaced)).foregroundColor(Palette.muted) }
+                    TextField("Absolute path on the server", text: $newPath).foregroundColor(Palette.text)
+                    Button("Add") {
+                        Task { await store.addWorkspace(newPath) }
+                        showAdd = false; newPath = ""
+                    }.foregroundColor(Palette.accent)
                 }.listRowBackground(Palette.surface)
             }
+            ForEach(store.spaces) { s in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(s.name + (s.last ? " · last" : "")).foregroundColor(s.last ? Palette.accent : Palette.text)
+                        if !s.path.isEmpty { Text(s.path).font(.system(.caption, design: .monospaced)).foregroundColor(Palette.muted) }
+                    }
+                    Spacer()
+                    if !s.path.isEmpty {
+                        Button("Remove") { Task { await store.removeWorkspace(s.path) } }.font(.caption).foregroundColor(Palette.danger)
+                    }
+                }.listRowBackground(Palette.surface)
+            }
+            Text("Paths are validated as existing directories before saving.").font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
         }.scrollContentBackground(.hidden).background(Palette.bg)
     }
 }
 
 struct ProfilesPane: View {
     @ObservedObject var store: AppStore
+    @State private var showNew = false
+    @State private var newName = ""
     var body: some View {
         List {
-            Text("Active profile: \(store.activeProfile.isEmpty ? "default" : store.activeProfile)")
-                .font(.caption).foregroundColor(Palette.muted).listRowBackground(Palette.bg)
+            HStack {
+                Text("Active profile: \(store.activeProfile.isEmpty ? "default" : store.activeProfile)")
+                    .font(.caption).foregroundColor(Palette.muted)
+                Spacer()
+                Button(showNew ? "Cancel" : "+ New profile") { showNew.toggle() }.font(.caption).foregroundColor(Palette.accent)
+            }.listRowBackground(Palette.bg)
+            if showNew {
+                VStack(alignment: .leading) {
+                    TextField("Profile name", text: $newName).foregroundColor(Palette.text)
+                    Button("Create") {
+                        Task { await store.createProfile(newName) }
+                        showNew = false; newName = ""
+                    }.foregroundColor(Palette.accent)
+                }.listRowBackground(Palette.surface)
+            }
             ForEach(store.profiles) { p in
-                Button {
-                    Task { await store.switchProfile(p.name) }
-                } label: {
-                    HStack {
+                HStack {
+                    Button { Task { await store.switchProfile(p.name) } } label: {
                         VStack(alignment: .leading) {
                             Text(p.name).foregroundColor(p.active ? Palette.accent : Palette.text)
                             if !p.model.isEmpty { Text(p.model).font(.caption).foregroundColor(Palette.muted) }
                         }
-                        Spacer()
-                        if p.active { Text("active").font(.caption).foregroundColor(Palette.accent) }
+                    }
+                    Spacer()
+                    if p.active { Text("active").font(.caption).foregroundColor(Palette.accent) }
+                    else if p.name != "default" {
+                        Button("Delete") { Task { await store.deleteProfile(p.name) } }.font(.caption).foregroundColor(Palette.danger)
                     }
                 }.listRowBackground(Palette.surface)
             }
@@ -442,30 +548,129 @@ struct TodosPane: View {
 
 struct InsightsPane: View {
     @ObservedObject var store: AppStore
-    var body: some View { DashboardPane(store: store) }
+    var body: some View {
+        let ins = store.insights
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Insights").font(.headline).foregroundColor(Palette.text)
+                    Spacer()
+                    Button("Refresh") { Task { await store.loadPanel() } }.foregroundColor(Palette.accent)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach([7, 30, 90, 365], id: \.self) { d in
+                            Text("\(d) days")
+                                .font(.caption)
+                                .foregroundColor(store.insightsDays == d ? Palette.accent : Palette.muted)
+                                .padding(8).background(Palette.surface).cornerRadius(8)
+                                .onTapGesture { store.insightsDays = d; Task { await store.loadPanel() } }
+                        }
+                    }
+                }
+                HStack {
+                    stat("Sessions", "\(ins.sessions)")
+                    stat("Messages", "\(ins.messages)")
+                }
+                HStack {
+                    stat("Tokens", ConsoleFmt.tok(Int64(ins.tokens)))
+                    stat("Cost", String(format: "$%.2f", ins.cost) + (ins.cacheHit.map { " · \(Int($0))% cache" } ?? ""))
+                }
+                if !ins.skills.isEmpty {
+                    Text("Skill usage").font(.headline).foregroundColor(Palette.text).padding(.top, 8)
+                    ForEach(ins.skills) { s in
+                        HStack {
+                            Text(s.name).foregroundColor(Palette.text).lineLimit(1)
+                            Spacer()
+                            Text("\(s.uses)").frame(width: 44, alignment: .trailing).foregroundColor(Palette.text)
+                            Text("\(s.views)").frame(width: 44, alignment: .trailing).foregroundColor(Palette.muted)
+                            Text("\(s.patches)").frame(width: 52, alignment: .trailing).foregroundColor(Palette.muted)
+                        }.font(.caption)
+                    }
+                }
+                if !ins.models.isEmpty {
+                    Text("Models").font(.headline).foregroundColor(Palette.text).padding(.top, 8)
+                    ForEach(ins.models) { m in
+                        HStack {
+                            Text(m.model).foregroundColor(Palette.text).lineLimit(1)
+                            Spacer()
+                            Text("\(m.sessions)").frame(width: 36, alignment: .trailing)
+                            Text(ConsoleFmt.tok(Int64(m.tokens))).frame(width: 56, alignment: .trailing)
+                            Text(m.cacheHitPct.map { "\(Int($0))%" } ?? "—").frame(width: 40, alignment: .trailing)
+                            Text(m.cost > 0 ? String(format: "$%.2f", m.cost) : "N/A").frame(width: 52, alignment: .trailing)
+                        }.font(.caption).foregroundColor(Palette.muted)
+                    }
+                }
+            }.padding(16)
+        }.background(Palette.bg)
+    }
+    private func stat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(label).font(.caption).foregroundColor(Palette.muted)
+            Text(value).font(.headline).foregroundColor(Palette.text)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12).background(Palette.surface).cornerRadius(10)
+    }
 }
 
 struct LogsPane: View {
     @ObservedObject var store: AppStore
+    @State private var severity = "all"
     var body: some View {
-        VStack {
-            HStack {
-                ForEach(["agent", "errors", "gateway"], id: \.self) { f in
-                    Text(f)
-                        .foregroundColor(store.logFile == f ? Palette.accent : Palette.muted)
-                        .padding(8).background(Palette.surface).cornerRadius(8)
-                        .onTapGesture { Task { await store.setLogFile(f) } }
-                }
-                Button("Refresh") { Task { await store.loadPanel() } }.foregroundColor(Palette.accent)
-                Spacer()
-            }.padding(12)
-            ScrollView {
-                LazyVStack(alignment: .leading) {
-                    ForEach(Array(store.logLines.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(["agent", "errors", "gateway"], id: \.self) { f in
+                        Text(f)
+                            .foregroundColor(store.logFile == f ? Palette.accent : Palette.muted)
+                            .padding(8).background(Palette.surface).cornerRadius(8)
+                            .onTapGesture { Task { await store.setLogFile(f) } }
                     }
                 }.padding(12)
             }
-        }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach([100, 200, 500, 1000], id: \.self) { n in
+                        Text("\(n)")
+                            .font(.caption)
+                            .foregroundColor(store.logTail == n ? Palette.accent : Palette.muted)
+                            .padding(8).background(Palette.surface).cornerRadius(8)
+                            .onTapGesture { Task { await store.setLogTail(n) } }
+                    }
+                    ForEach([("all","All"),("err","Errors"),("warn","Warnings+")], id: \.0) { k, label in
+                        Text(label)
+                            .font(.caption)
+                            .foregroundColor(severity == k ? Palette.accent : Palette.muted)
+                            .padding(8).background(Palette.surface).cornerRadius(8)
+                            .onTapGesture { severity = k }
+                    }
+                    Button("Copy all") {
+                        UIPasteboard.general.string = store.logLines.joined(separator: "\n")
+                    }.font(.caption).foregroundColor(Palette.accent)
+                    Button("Refresh") { Task { await store.loadPanel() } }.font(.caption).foregroundColor(Palette.accent)
+                }.padding(.horizontal, 12)
+            }
+            let shown = store.logLines.filter { line in
+                switch severity {
+                case "err": return line.uppercased().contains("ERROR") || line.uppercased().contains("CRITICAL") || line.contains("Traceback")
+                case "warn": return line.uppercased().contains("ERROR") || line.uppercased().contains("WARN") || line.uppercased().contains("CRITICAL")
+                default: return true
+                }
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading) {
+                    ForEach(Array(shown.enumerated()), id: \.offset) { _, line in
+                        let color: Color = {
+                            let u = line.uppercased()
+                            if u.contains("ERROR") || u.contains("CRITICAL") { return Palette.danger }
+                            if u.contains("WARN") { return Palette.accent }
+                            return Palette.text
+                        }()
+                        Text(line).font(.system(.footnote, design: .monospaced)).foregroundColor(color)
+                    }
+                }.padding(12)
+            }
+        }.background(Palette.bg)
     }
 }

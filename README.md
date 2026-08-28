@@ -11,9 +11,10 @@ This repo has **no personal data**. First launch asks for the WebUI URL.
 Chat · Tasks · Kanban · Skills · Memory · Spaces · Profiles · Todos ·
 Insights · Logs · Settings
 
-**Insights** is Hermes Console (`:8790` usage/burn). The official Hermes
-Dashboard (`:9119`) panel was removed in v0.9.16 — it will ship as its own
-separate app. Conversations live **under Chat**
+**Insights** is the WebUI Insights panel (`GET /api/insights` — period, skill
+usage, models). Hermes Console (`:8790` usage/burn) is under Settings → System,
+not a rail item. The official Hermes Dashboard (`:9119`) panel was removed in
+v0.9.16. Conversations live **under Chat**
 as a collapsed dropdown. Paperclip attaches photos/files from the phone
 (`POST /api/upload`). Folder chip opens workspace Files.
 

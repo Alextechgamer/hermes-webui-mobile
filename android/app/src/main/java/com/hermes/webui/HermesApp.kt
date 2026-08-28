@@ -309,6 +309,23 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
             )
         }
         val q = vm.sessionQuery.value.trim().lowercase()
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val webLabel = "WebUI" + (vm.webuiSessionCount.value.takeIf { it > 0 }?.let { " ($it)" } ?: "")
+            val cliLabel = "CLI" + (vm.cliSessionCount.value.takeIf { it > 0 }?.let { " ($it)" } ?: "")
+            listOf("" to webLabel, "cli" to cliLabel).forEach { (src, label) ->
+                val sel = vm.sessionSource.value == src
+                Text(
+                    label,
+                    color = if (sel) Wui.AccentText else Wui.Muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clip(WuiShapeMd)
+                        .background(if (sel) Wui.AccentBg else Wui.Surface)
+                        .clickable { vm.setSessionSource(src) }
+                        .padding(10.dp, 5.dp),
+                )
+            }
+        }
         val shown = vm.sessions.filter {
             q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
         }
@@ -355,7 +372,8 @@ fun PanelHost(vm: AppVm) {
         Panel.Todos -> TodosPane(vm)
         Panel.Files -> FilesPane(vm)
         Panel.Terminal -> TerminalPane(vm)
-        Panel.Insights -> DashboardPane(vm)
+        Panel.Insights -> InsightsPane(vm)
+        Panel.Console -> DashboardPane(vm)
         Panel.Logs -> LogsPane(vm)
         Panel.Settings -> SettingsPane(vm)
     }

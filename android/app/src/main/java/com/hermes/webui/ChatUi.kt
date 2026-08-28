@@ -124,7 +124,7 @@ fun ChatPane(vm: AppVm) {
                     }
                 }
                 if (vm.bubbles.isEmpty() && vm.live.value.isEmpty()) {
-                    item { EmptyChat(vm) }
+                    item { EmptyChat(vm) { s -> draft = s } }
                 }
                 itemsIndexed(vm.bubbles, key = { i, b -> "${b.id}-$i" }) { _, b ->
                     MessageRow(vm, b)
@@ -165,12 +165,30 @@ fun ChatPane(vm: AppVm) {
 }
 
 @Composable
-private fun EmptyChat(vm: AppVm) {
+private fun EmptyChat(vm: AppVm, onSuggest: (String) -> Unit = {}) {
     Column(
         Modifier.fillMaxWidth().padding(top = 72.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("What can I help with?", color = Wui.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp)
+        Spacer(Modifier.height(14.dp))
+        listOf(
+            "What files are in this workspace?",
+            "What's on my schedule today?",
+            "Help me plan a small project.",
+        ).forEach { sug ->
+            Text(
+                sug,
+                color = Wui.Muted,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Wui.Surface)
+                    .clickable { onSuggest(sug) }
+                    .padding(14.dp, 10.dp),
+            )
+        }
         if (vm.sessions.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             Text("Recent conversations", color = Wui.Muted, fontSize = 12.sp)

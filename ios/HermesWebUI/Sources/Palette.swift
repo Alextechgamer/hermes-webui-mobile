@@ -84,6 +84,7 @@ extension Panel {
         case .terminal: return "terminal"
         case .logs: return "doc.text"
         case .settings: return "gearshape"
+        case .console: return "chart.bar.doc.horizontal"
         }
     }
 }

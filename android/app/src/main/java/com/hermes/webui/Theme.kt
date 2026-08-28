@@ -75,6 +75,7 @@ fun Panel.icon(): ImageVector = when (this) {
     Panel.Files -> Icons.Outlined.Description
     Panel.Terminal -> Icons.Outlined.Terminal
     Panel.Logs -> Icons.Outlined.Description
+    Panel.Console -> Icons.Outlined.BarChart
     Panel.Settings -> Icons.Outlined.Settings
 }
 

@@ -33,6 +33,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val panel = mutableStateOf(Panel.Chat)
     val sessions = mutableStateListOf<SessionRow>()
     val sessionQuery = mutableStateOf("")
+    val sessionSource = mutableStateOf("")           // "" = webui, "cli" = CLI sessions
+    val webuiSessionCount = mutableStateOf(0)
+    val cliSessionCount = mutableStateOf(0)
     val bubbles = mutableStateListOf<ChatMsg>()
     val live = mutableStateOf("")
     val busy = mutableStateOf(false)
@@ -62,8 +65,10 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val activeProfile = mutableStateOf("")
     val todos = mutableStateListOf<TodoItem>()
     val insights = mutableStateOf(Insights())
+    val insightsDays = mutableStateOf(30)
     val logLines = mutableStateListOf<String>()
     val logFile = mutableStateOf("agent")
+    val logTail = mutableStateOf(200)
     val dash = mutableStateListOf<DashCard>()
     val console = mutableStateOf<ConsoleUsage?>(null)
     val consoleError = mutableStateOf<String?>(null)
@@ -258,9 +263,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     Panel.Todos -> if (sid.isNotBlank()) open(sid, keepPanel = true)
                     Panel.Files -> loadFiles(fsPath.value)
                     Panel.Terminal -> { }
-                    Panel.Insights -> loadConsole(includeConfig = true)
+                    Panel.Insights -> {
+                        val days = insightsDays.value
+                        val data = withContext(Dispatchers.IO) { c.insights(days) }
+                        insights.value = data
+                    }
+                    Panel.Console -> loadConsole(includeConfig = true)
                     Panel.Logs -> {
-                        val lines = withContext(Dispatchers.IO) { c.logs(logFile.value) }
+                        val lines = withContext(Dispatchers.IO) { c.logs(logFile.value, logTail.value) }
                         logLines.clear(); logLines.addAll(lines)
                     }
                     Panel.Settings -> {
@@ -297,10 +307,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         viewModelScope.launch {
             try {
-                val list = withContext(Dispatchers.IO) { c.sessions() }
-                sessions.clear(); sessions.addAll(list)
+                val res = withContext(Dispatchers.IO) { c.sessions(sessionSource.value) }
+                sessions.clear(); sessions.addAll(res.rows)
+                webuiSessionCount.value = res.webuiCount
+                cliSessionCount.value = res.cliCount
             } catch (e: Exception) { error.value = e.message }
         }
+    }
+
+    fun setSessionSource(source: String) {
+        if (sessionSource.value == source) return
+        sessionSource.value = source
+        refreshSessions()
     }
 
     private fun loadModels() {
@@ -590,6 +608,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun createCron(name: String, schedule: String, prompt: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createCron(name, schedule, prompt) }
+                loadPanel(Panel.Tasks)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun deleteCron(id: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.deleteCron(id) } }
+            loadPanel(Panel.Tasks)
+        }
+    }
+
     fun loadJobOutput(id: String) {
         val c = api ?: return
         viewModelScope.launch {
@@ -689,8 +725,67 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun createProfile(name: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createProfile(name) }
+                loadPanel(Panel.Profiles)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun deleteProfile(name: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.deleteProfile(name) } }
+            loadPanel(Panel.Profiles)
+        }
+    }
+
+    fun addWorkspace(path: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.addWorkspace(path) }
+                loadPanel(Panel.Spaces)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun removeWorkspace(path: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.removeWorkspace(path) } }
+            loadPanel(Panel.Spaces)
+        }
+    }
+
+    fun saveSkill(name: String, category: String, content: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.saveSkill(name, category, content) }
+                loadPanel(Panel.Skills)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun deleteSkill(name: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.deleteSkill(name) } }
+            loadPanel(Panel.Skills)
+        }
+    }
+
     fun setLogFile(file: String) {
         logFile.value = file
+        loadPanel(Panel.Logs)
+    }
+
+    fun setLogTail(n: Int) {
+        logTail.value = n
         loadPanel(Panel.Logs)
     }
 

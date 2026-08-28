@@ -59,10 +59,11 @@ Auth is cookie + CSRF. No bearer token.
 | Kanban | `/api/kanban/board` `{columns:[{name,tasks}]}` | PATCH `/api/kanban/tasks/<id>` `{status}` |
 | Skills | `/api/skills` `{skills:[{name,description,category,disabled}]}` | `/api/skills/toggle` `{name,enabled}` |
 | Memory | `/api/memory` `{memory,user,soul,project_context}` | `/api/memory/write` `{section,content}` |
-| Spaces | `/api/workspaces` `{workspaces,last}` | — |
-| Profiles | `/api/profiles` `{profiles,active}` | `/api/profile/switch` `{name}` |
+| Spaces | `/api/workspaces` `{workspaces,last}` | `/api/workspaces/add` `{path}`, `/api/workspaces/remove` `{path}` |
+| Profiles | `/api/profiles` `{profiles,active}` | `/api/profile/switch` `{name}`, `/api/profile/create` `{name}`, `/api/profile/delete` `{name}` |
 | Todos | from session `todo_state` / last tool `{todos}` | — |
-| Insights | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` (plans + model rates). **Not** `/api/insights`. | — |
+| Insights | WebUI `GET /api/insights?days=` + `GET /api/skills/usage`. Period 7/30/90/365. **Not** `:8790`. | — |
+| Console (Settings → System) | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` | — |
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |

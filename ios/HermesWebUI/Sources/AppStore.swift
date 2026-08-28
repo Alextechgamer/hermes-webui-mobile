@@ -8,6 +8,9 @@ import UniformTypeIdentifiers
 final class AppStore: ObservableObject {
     @Published var sessions: [SessionRow] = []
     @Published var sessionQuery = ""
+    @Published var sessionSource = ""
+    @Published var webuiSessionCount = 0
+    @Published var cliSessionCount = 0
     @Published var messages: [ChatMessage] = []
     @Published var liveText: String = ""
     @Published var title: String = "Hermes"
@@ -44,8 +47,10 @@ final class AppStore: ObservableObject {
     @Published var activeProfile = ""
     @Published var todos: [TodoItem] = []
     @Published var insights = Insights()
+    @Published var insightsDays = 30
     @Published var logLines: [String] = []
     @Published var logFile = "agent"
+    @Published var logTail = 200
     @Published var dash: [DashCard] = []
     @Published var console = ConsoleUsage()
     @Published var consoleError: String?
@@ -168,7 +173,18 @@ final class AppStore: ObservableObject {
 
     func loadSessions() async {
         guard let c = client else { return }
-        do { sessions = try await c.sessions() } catch { self.error = error.localizedDescription }
+        do {
+            let res = try await c.sessions(source: sessionSource)
+            sessions = res.rows
+            webuiSessionCount = res.webuiCount
+            cliSessionCount = res.cliCount
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func setSessionSource(_ source: String) async {
+        guard sessionSource != source else { return }
+        sessionSource = source
+        await loadSessions()
     }
 
     func loadModels() async {
@@ -271,8 +287,10 @@ final class AppStore: ObservableObject {
             case .files: await loadFiles(fsPath)
             case .terminal: break
             case .insights:
+                insights = try await c.insights(days: insightsDays)
+            case .console:
                 await loadConsole()
-            case .logs: logLines = try await c.logs(file: logFile)
+            case .logs: logLines = try await c.logs(file: logFile, tail: logTail)
             case .settings:
                 settingsItems = try await c.settings()
                 settingEdits = [:]
@@ -741,6 +759,18 @@ final class AppStore: ObservableObject {
         await loadPanel()
     }
 
+    func createCron(name: String, schedule: String, prompt: String) async {
+        do {
+            try await client?.createCron(name: name, schedule: schedule, prompt: prompt)
+            await loadPanel()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func deleteCron(_ id: String) async {
+        await client?.deleteCron(id: id)
+        await loadPanel()
+    }
+
     func loadJobOutput(_ id: String) async { jobOutput = await client?.cronOutput(id: id) ?? "" }
 
     func loadKanban() async {
@@ -813,8 +843,49 @@ final class AppStore: ObservableObject {
         await loadModels()
     }
 
+    func createProfile(_ name: String) async {
+        do {
+            try await client?.createProfile(name: name)
+            await loadPanel()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func deleteProfile(_ name: String) async {
+        await client?.deleteProfile(name: name)
+        await loadPanel()
+    }
+
+    func addWorkspace(_ path: String) async {
+        do {
+            try await client?.addWorkspace(path: path)
+            await loadPanel()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func removeWorkspace(_ path: String) async {
+        await client?.removeWorkspace(path: path)
+        await loadPanel()
+    }
+
+    func saveSkill(name: String, category: String, content: String) async {
+        do {
+            try await client?.saveSkill(name: name, category: category, content: content)
+            await loadPanel()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func deleteSkill(_ name: String) async {
+        await client?.deleteSkill(name: name)
+        await loadPanel()
+    }
+
     func setLogFile(_ file: String) async {
         logFile = file
+        await loadPanel()
+    }
+
+    func setLogTail(_ n: Int) async {
+        logTail = n
         await loadPanel()
     }
 
@@ -854,7 +925,8 @@ final class AppStore: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard let self, let c = self.client, self.loggedIn else { continue }
-                if self.panel == .insights { await self.loadConsole() }
+                if self.panel == .insights { await self.loadPanel() }
+                if self.panel == .console { await self.loadConsole() }
                 guard !self.currentSid.isEmpty else { continue }
                 let a = await c.approval(sid: self.currentSid)
                 let q = await c.clarify(sid: self.currentSid)

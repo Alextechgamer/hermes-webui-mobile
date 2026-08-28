@@ -69,8 +69,8 @@ the migration row.
 
 ## Panels
 
-- [ ] **Insights** — is Hermes Console (`:8790`): burn, plans, live streams,
-  cost editors. Auto-refreshes while open. Not the thin stats page.
+- [ ] **Insights** — is WebUI `/api/insights`: 7/30/90/365 days, skill usage
+  table, models table. Not the :8790 Console (that is Settings → System).
 - [ ] **Settings** — Conversation / Appearance / Preferences / Providers /
   Plugins / Extensions / System / Help all populate against the live server.
 - [ ] **Icon** — launcher shows the cyan caduceus on navy on both platforms

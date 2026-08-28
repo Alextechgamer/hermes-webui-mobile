@@ -269,7 +269,7 @@ struct SystemSettings: View {
                 Text("Instance access and Hermes Console.")
                     .font(.system(size: 12)).foregroundColor(Palette.muted)
                     .padding(.bottom, 4)
-                Button { Task { await store.go(.insights) } } label: {
+                Button { Task { await store.go(.console) } } label: {
                     HStack {
                         VStack(alignment: .leading) {
                             Text("Hermes Console").fontWeight(.semibold).foregroundColor(Palette.text)

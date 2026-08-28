@@ -14,6 +14,7 @@ enum class Panel(val label: String, val inRail: Boolean = true) {
     Settings("Settings"),
     Files("Files", inRail = false),
     Terminal("Terminal", inRail = false),
+    Console("Console", inRail = false),
 }
 
 enum class SettingsSection(val label: String) {
@@ -140,6 +141,7 @@ data class CronJob(
     val prompt: String,
     val lastStatus: String,
     val lastRun: String,
+    val nextRun: String = "",
     val owner: String,
     val readOnly: Boolean,
 )
@@ -217,6 +219,21 @@ data class InsightModel(
     val sessions: Int,
     val tokens: Int,
     val cost: Double,
+    val cacheHitPct: Double? = null,
+    val costShare: Double? = null,
+)
+
+data class SkillUsage(
+    val name: String,
+    val uses: Int,
+    val views: Int,
+    val patches: Int,
+)
+
+data class SessionsResult(
+    val rows: List<SessionRow>,
+    val webuiCount: Int = 0,
+    val cliCount: Int = 0,
 )
 
 data class Insights(
@@ -227,6 +244,7 @@ data class Insights(
     val cost: Double = 0.0,
     val cacheHit: Double? = null,
     val models: List<InsightModel> = emptyList(),
+    val skills: List<SkillUsage> = emptyList(),
 )
 
 data class DashCard(val title: String, val value: String, val hint: String = "")

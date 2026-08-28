@@ -106,17 +106,22 @@ final class APIClient {
         }
     }
 
-    func sessions() async throws -> [SessionRow] {
-        let data = try await getData("/api/sessions")
+    func sessions(source: String = "") async throws -> SessionsResult {
+        let qs = source == "cli" ? "?source=cli" : ""
+        let data = try await getData("/api/sessions\(qs)")
         let obj = try JSONSerialization.jsonObject(with: data)
         var raw: [Any] = []
+        var webuiCount = 0
+        var cliCount = 0
         if let arr = obj as? [Any] { raw = arr }
         else if let d = obj as? [String: Any] {
             for k in ["sessions", "data", "items"] {
                 if let arr = d[k] as? [Any] { raw = arr; break }
             }
+            webuiCount = (d["webui_session_count"] as? Int) ?? 0
+            cliCount = (d["cli_session_count"] as? Int) ?? 0
         }
-        return raw.compactMap { item in
+        let rows = raw.compactMap { item -> SessionRow? in
             guard let d = item as? [String: Any] else { return nil }
             let sid = str(d, "session_id", "id")
             if sid.isEmpty { return nil }
@@ -133,6 +138,7 @@ final class APIClient {
             if let b = d["pinned"] as? Bool { row.pinned = b }
             return row
         }
+        return SessionsResult(rows: rows, webuiCount: webuiCount, cliCount: cliCount)
     }
 
     func loadSession(id: String, full: Bool = false) async throws -> SessionLoad {
@@ -440,19 +446,36 @@ final class APIClient {
         return (obj["jobs"] as? [[String: Any]] ?? []).compactMap { j in
             let id = str(j, "id", "job_id")
             guard !id.isEmpty else { return nil }
+            var schedule = first(j, "schedule_display") ?? ""
+            if schedule.isEmpty, let s = j["schedule"] as? [String: Any] {
+                schedule = (s["display"] as? String) ?? (s["expr"] as? String) ?? ""
+            }
+            if schedule.isEmpty, j["schedule"] is String { schedule = str(j, "schedule") }
+            let paused = bool(j, "paused", false) || (j["state"] as? String)?.lowercased() == "paused" || j["paused_at"] != nil
             return CronJob(
                 id: id,
                 name: first(j, "name", "id") ?? "job",
-                schedule: str(j, "schedule"),
+                schedule: schedule,
                 enabled: bool(j, "enabled", true),
-                paused: bool(j, "paused", false),
+                paused: paused,
                 prompt: str(j, "prompt"),
                 lastStatus: first(j, "last_status", "status", "last_error") ?? "",
                 lastRun: stringify(j["last_run"] ?? j["last_run_at"] ?? ""),
+                nextRun: stringify(j["next_run_at"] ?? j["next_run"] ?? ""),
                 owner: first(j, "owner_profile", "profile") ?? "",
                 readOnly: bool(j, "read_only", false)
             )
         }
+    }
+
+    func createCron(name: String, schedule: String, prompt: String) async throws {
+        var body: [String: Any] = ["schedule": schedule, "prompt": prompt]
+        if !name.isEmpty { body["name"] = name }
+        _ = try await postJSON("/api/crons/create", body: body)
+    }
+
+    func deleteCron(id: String) async {
+        _ = try? await postJSON("/api/crons/delete", body: ["job_id": id])
     }
 
     func cronAction(id: String, action: String) async {
@@ -609,27 +632,69 @@ final class APIClient {
         _ = try? await postJSON("/api/profile/switch", body: ["name": name])
     }
 
-    func insights() async throws -> Insights {
-        let o = try await dict("/api/insights?days=30")
+    func createProfile(name: String) async throws {
+        _ = try await postJSON("/api/profile/create", body: ["name": name])
+    }
+
+    func deleteProfile(name: String) async {
+        _ = try? await postJSON("/api/profile/delete", body: ["name": name])
+    }
+
+    func addWorkspace(path: String) async throws {
+        _ = try await postJSON("/api/workspaces/add", body: ["path": path])
+    }
+
+    func removeWorkspace(path: String) async {
+        _ = try? await postJSON("/api/workspaces/remove", body: ["path": path])
+    }
+
+    func saveSkill(name: String, category: String, content: String) async throws {
+        var body: [String: Any] = ["name": name, "content": content]
+        if !category.isEmpty { body["category"] = category }
+        _ = try await postJSON("/api/skills/save", body: body)
+    }
+
+    func deleteSkill(name: String) async {
+        _ = try? await postJSON("/api/skills/delete", body: ["name": name])
+    }
+
+    func insights(days: Int = 30) async throws -> Insights {
+        let o = try await dict("/api/insights?days=\(days)")
         let models = (o["models"] as? [[String: Any]] ?? []).map { m in
-            InsightModel(model: str(m, "model"), sessions: int(m, "sessions"), tokens: int(m, "total_tokens"), cost: double(m, "cost"))
+            InsightModel(
+                model: str(m, "model"),
+                sessions: int(m, "sessions"),
+                tokens: int(m, "total_tokens"),
+                cost: double(m, "cost"),
+                cacheHitPct: m["cache_hit_percent"] as? Double,
+                costShare: m["cost_share"] as? Double
+            )
+        }
+        var skills: [SkillUsage] = []
+        if let su = try? await dict("/api/skills/usage?days=\(days)"),
+           let usage = su["usage"] as? [String: [String: Any]] {
+            skills = usage.map { name, u in
+                SkillUsage(name: name, uses: int(u, "use_count"), views: int(u, "view_count"), patches: int(u, "patch_count"))
+            }.sorted { $0.uses > $1.uses }
+            if skills.count > 20 { skills = Array(skills.prefix(20)) }
         }
         var hit: Double? = nil
         if let n = o["total_cache_hit_percent"] as? Double { hit = n }
         if let d = o["total_cache_hit_percent"] as? [String: Any] { hit = double(d, "value") }
         return Insights(
-            days: int(o, "period_days") == 0 ? 30 : int(o, "period_days"),
+            days: int(o, "period_days") == 0 ? days : int(o, "period_days"),
             sessions: int(o, "total_sessions"),
             messages: int(o, "total_messages"),
             tokens: int(o, "total_tokens"),
             cost: double(o, "total_cost"),
             cacheHit: hit,
-            models: models
+            models: models,
+            skills: skills
         )
     }
 
-    func logs(file: String) async throws -> [String] {
-        let o = try await dict("/api/logs?file=\(q(file))&tail=250")
+    func logs(file: String, tail: Int = 200) async throws -> [String] {
+        let o = try await dict("/api/logs?file=\(q(file))&tail=\(tail)")
         return o["lines"] as? [String] ?? []
     }
 

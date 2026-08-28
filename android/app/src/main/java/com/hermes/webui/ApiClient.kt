@@ -159,10 +159,16 @@ class ApiClient(base: String, prefs: Prefs) {
         }
     }
 
-    fun sessions(): List<SessionRow> {
-        val el = parse("/api/sessions")
+    fun sessions(source: String = ""): SessionsResult {
+        val qs = if (source == "cli") "?source=cli" else ""
+        val el = parse("/api/sessions$qs")
         val arr = el.arrayOf("sessions", "data", "items")
-        return arr.mapNotNull { it.asObjOrNull()?.toSession() }
+        val o = el.asObj()
+        return SessionsResult(
+            rows = arr.mapNotNull { it.asObjOrNull()?.toSession() },
+            webuiCount = o.int("webui_session_count"),
+            cliCount = o.int("cli_session_count"),
+        )
     }
 
     fun loadSession(sid: String, full: Boolean = false): SessionLoad {
@@ -382,19 +388,36 @@ class ApiClient(base: String, prefs: Prefs) {
         val o = parse("/api/crons").asObj()
         return (o.arr("jobs") ?: JsonArray(emptyList())).mapNotNull { el ->
             val j = el.asObjOrNull() ?: return@mapNotNull null
+            // schedule can be an object {kind, expr, display} — never show raw JSON
+            val schedObj = j.obj("schedule")
+            val schedule = j.str("schedule_display")
+                .ifBlank { schedObj?.str("display").orEmpty() }
+                .ifBlank { schedObj?.str("expr").orEmpty() }
+                .ifBlank { if (schedObj == null) j.str("schedule") else "" }
             CronJob(
                 id = j.str("id", "job_id"),
                 name = j.str("name", "id", "job_id").ifBlank { "job" },
-                schedule = j.str("schedule"),
+                schedule = schedule,
                 enabled = j.bool("enabled", default = true),
-                paused = j.bool("paused"),
+                paused = j.str("state").equals("paused", true) || j.bool("paused") || j["paused_at"].let { it != null && it !is JsonNull },
                 prompt = j.str("prompt"),
                 lastStatus = j.str("last_status", "status", "last_error"),
-                lastRun = j.anyToString("last_run", "last_run_at", "next_run"),
+                lastRun = j.anyToString("last_run", "last_run_at"),
+                nextRun = j.anyToString("next_run_at", "next_run"),
                 owner = j.str("owner_profile", "profile"),
                 readOnly = j.bool("read_only"),
             )
         }.filter { it.id.isNotBlank() }
+    }
+
+    fun createCron(name: String, schedule: String, prompt: String) {
+        val parts = mutableListOf("\"schedule\":${q(schedule)}", "\"prompt\":${q(prompt)}")
+        if (name.isNotBlank()) parts += "\"name\":${q(name)}"
+        postRaw("/api/crons/create", "{" + parts.joinToString(",") + "}")
+    }
+
+    fun deleteCron(jobId: String) {
+        postRaw("/api/crons/delete", """{"job_id":${q(jobId)}}""")
     }
 
     fun cronAction(jobId: String, action: String) {
@@ -584,6 +607,36 @@ class ApiClient(base: String, prefs: Prefs) {
         postRaw("/api/profile/switch", """{"name":${q(name)}}""")
     }
 
+    fun createProfile(name: String) {
+        postRaw("/api/profile/create", """{"name":${q(name)}}""")
+    }
+
+    fun deleteProfile(name: String) {
+        postRaw("/api/profile/delete", """{"name":${q(name)}}""")
+    }
+
+    fun addWorkspace(path: String) {
+        postRaw("/api/workspaces/add", """{"path":${q(path)}}""")
+    }
+
+    fun removeWorkspace(path: String) {
+        postRaw("/api/workspaces/remove", """{"path":${q(path)}}""")
+    }
+
+    fun renameWorkspace(path: String, name: String) {
+        postRaw("/api/workspaces/rename", """{"path":${q(path)},"name":${q(name)}}""")
+    }
+
+    fun saveSkill(name: String, category: String, content: String) {
+        val parts = mutableListOf("\"name\":${q(name)}", "\"content\":${q(content)}")
+        if (category.isNotBlank()) parts += "\"category\":${q(category)}"
+        postRaw("/api/skills/save", "{" + parts.joinToString(",") + "}")
+    }
+
+    fun deleteSkill(name: String) {
+        postRaw("/api/skills/delete", """{"name":${q(name)}}""")
+    }
+
     fun prompts(): List<SavedPrompt> {
         val o = parse("/api/prompts").asObj()
         return (o.arr("prompts") ?: JsonArray(emptyList())).mapNotNull { el ->
@@ -594,27 +647,39 @@ class ApiClient(base: String, prefs: Prefs) {
         }
     }
 
-    fun insights(): Insights {
-        val o = parse("/api/insights?days=30").asObj()
+    fun insights(days: Int = 30): Insights {
+        val o = parse("/api/insights?days=$days").asObj()
         val models = (o.arr("models") ?: JsonArray(emptyList())).mapNotNull { el ->
             val m = el.asObjOrNull() ?: return@mapNotNull null
-            InsightModel(m.str("model"), m.int("sessions"), m.int("total_tokens"), m.double("cost"))
+            InsightModel(
+                m.str("model"), m.int("sessions"), m.int("total_tokens"), m.double("cost"),
+                cacheHitPct = m.doubleOrNull("cache_hit_percent"),
+                costShare = m.doubleOrNull("cost_share"),
+            )
         }
+        val skillsUsage = runCatching {
+            val su = parse("/api/skills/usage?days=$days").asObj().obj("usage") ?: JsonObject(emptyMap())
+            su.entries.mapNotNull { (name, v) ->
+                val u = v.asObjOrNull() ?: return@mapNotNull null
+                SkillUsage(name, u.int("use_count"), u.int("view_count"), u.int("patch_count"))
+            }.sortedByDescending { it.uses }.take(20)
+        }.getOrDefault(emptyList())
         val hit = o.obj("total_cache_hit_percent")?.double("value")
             ?: o.doubleOrNull("total_cache_hit_percent")
         return Insights(
-            days = o.int("period_days").takeIf { it > 0 } ?: 30,
+            days = o.int("period_days").takeIf { it > 0 } ?: days,
             sessions = o.int("total_sessions"),
             messages = o.int("total_messages"),
             tokens = o.int("total_tokens"),
             cost = o.double("total_cost"),
             cacheHit = hit,
             models = models,
+            skills = skillsUsage,
         )
     }
 
-    fun logs(file: String = "agent"): List<String> {
-        val o = parse("/api/logs?file=${enc(file)}&tail=250").asObj()
+    fun logs(file: String = "agent", tail: Int = 200): List<String> {
+        val o = parse("/api/logs?file=${enc(file)}&tail=$tail").asObj()
         return (o.arr("lines") ?: JsonArray(emptyList())).mapNotNull { it.primitiveOrNull() }
     }
 

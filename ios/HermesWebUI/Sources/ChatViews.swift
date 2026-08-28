@@ -41,6 +41,17 @@ struct ChatPane: View {
                                     .font(.system(size: 20, weight: .semibold))
                                     .tracking(-0.3)
                                     .foregroundColor(Palette.text)
+                                ForEach(["What files are in this workspace?", "What's on my schedule today?", "Help me plan a small project."], id: \.self) { sug in
+                                    Button { draft = sug } label: {
+                                        Text(sug)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(Palette.muted)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(10)
+                                            .background(Palette.surface)
+                                            .cornerRadius(10)
+                                    }
+                                }
                                 if !store.sessions.isEmpty {
                                     Text("Recent conversations")
                                         .font(.system(size: 12))

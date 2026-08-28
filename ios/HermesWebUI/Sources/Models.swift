@@ -72,6 +72,7 @@ struct CronJob: Identifiable {
     var prompt: String
     var lastStatus: String
     var lastRun: String
+    var nextRun: String = ""
     var owner: String
     var readOnly: Bool
 }
@@ -148,6 +149,22 @@ struct InsightModel: Identifiable {
     var sessions: Int
     var tokens: Int
     var cost: Double
+    var cacheHitPct: Double? = nil
+    var costShare: Double? = nil
+}
+
+struct SkillUsage: Identifiable {
+    var id: String { name }
+    var name: String
+    var uses: Int
+    var views: Int
+    var patches: Int
+}
+
+struct SessionsResult {
+    var rows: [SessionRow]
+    var webuiCount: Int = 0
+    var cliCount: Int = 0
 }
 
 struct Insights {
@@ -158,6 +175,7 @@ struct Insights {
     var cost: Double = 0
     var cacheHit: Double? = nil
     var models: [InsightModel] = []
+    var skills: [SkillUsage] = []
 }
 
 struct DashCard: Identifiable {
@@ -205,11 +223,11 @@ struct SettingItem: Identifiable {
 }
 
 enum Panel: String, CaseIterable, Identifiable {
-    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, insights, logs, settings, files, terminal
+    case chat, tasks, kanban, skills, memory, spaces, profiles, todos, insights, logs, settings, files, terminal, console
     var id: String { rawValue }
     var inRail: Bool {
         switch self {
-        case .files, .terminal: return false
+        case .files, .terminal, .console: return false
         default: return true
         }
     }
@@ -228,6 +246,7 @@ enum Panel: String, CaseIterable, Identifiable {
         case .insights: return "Insights"
         case .logs: return "Logs"
         case .settings: return "Settings"
+        case .console: return "Console"
         }
     }
 }
