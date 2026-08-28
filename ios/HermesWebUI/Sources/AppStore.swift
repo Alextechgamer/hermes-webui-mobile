@@ -26,6 +26,9 @@ final class AppStore: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var liveText: String = ""
     @Published var title: String = "Hermes"
+    /// Preserved when leaving Chat for Files/Terminal/Settings so the topbar
+    /// doesn't stay stuck on "Terminal" after coming back.
+    private var lastChatTitle = "Hermes"
     @Published var error: String?
     @Published var busy = false
     @Published var ready = false
@@ -248,8 +251,9 @@ final class AppStore: ObservableObject {
     }
 
     func go(_ p: Panel) async {
+        if panel == .chat { lastChatTitle = title }
         panel = p
-        title = p == .chat ? title : p.label
+        title = p == .chat ? lastChatTitle : p.label
         await loadPanel()
     }
 
@@ -373,7 +377,10 @@ final class AppStore: ObservableObject {
     }
 
     private func apply(_ load: SessionLoad) {
-        if !load.title.isEmpty { title = load.title }
+        if !load.title.isEmpty {
+            title = load.title
+            lastChatTitle = load.title
+        }
         if !load.model.isEmpty && selectedModel.isEmpty { selectedModel = load.model }
         if !load.model.isEmpty { Task { await loadReasoning() } }
         truncated = load.truncated
@@ -628,6 +635,7 @@ final class AppStore: ObservableObject {
             UserDefaults.standard.set(currentSid, forKey: "lastSid")
             messages = []; liveText = ""; todos = []
             title = "New conversation"
+            lastChatTitle = title
             truncated = false
             panel = .chat
             listenForSession()
@@ -641,6 +649,7 @@ final class AppStore: ObservableObject {
         if currentSid == id {
             detachChatStream()
             currentSid = ""; messages = []; liveText = ""; title = "Hermes"
+            lastChatTitle = "Hermes"
             UserDefaults.standard.set("", forKey: "lastSid")
         }
         await loadSessions()
@@ -663,7 +672,10 @@ final class AppStore: ObservableObject {
 
     func renameSession(_ id: String, _ titleText: String) async {
         await client?.renameSession(id: id, title: titleText)
-        if currentSid == id { title = titleText }
+        if currentSid == id {
+            title = titleText
+            lastChatTitle = titleText
+        }
         await loadSessions()
     }
 
@@ -1436,6 +1448,11 @@ private func jsonFlag(_ any: Any?) -> Bool {
 }
 
 private func stripAnsi(_ s: String) -> String {
-    let pattern = "\\u{001B}\\[[0-9;?]*[A-Za-z]|\\u{001B}\\].*?(\\u{0007}|\\u{001B}\\\\)"
-    return s.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+    // Use real ESC bytes in the pattern. "\\u{001B}" is the six-character
+    // literal \u{001B}, which never matches terminal output.
+    let esc = "\u{001B}"
+    let pattern = esc + "\\[[0-9;?]*[ -/]*[@-~]|" + esc + "\\][^\u{0007}" + esc + "]*(\u{0007}|" + esc + "\\\\)|" + esc + "[()][0-9A-Za-z]|" + esc + "[=>NO]"
+    var out = s.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+    out = out.replacingOccurrences(of: "[\u{0000}-\u{0008}\u{000B}\u{000C}\u{000E}-\u{001F}]", with: "", options: .regularExpression)
+    return out
 }
