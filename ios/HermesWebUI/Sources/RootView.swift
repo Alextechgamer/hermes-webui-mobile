@@ -275,6 +275,8 @@ struct DrawerBody: View {
     @Binding var show: Bool
     @State private var importing = false
     @State private var newProject = ""
+    @State private var renameSid = ""
+    @State private var renameDraft = ""
     @AppStorage("chatsExpanded") private var chatsExpanded = false
 
     var body: some View {
@@ -456,6 +458,10 @@ struct DrawerBody: View {
                     }
                     .contextMenu {
                         Button((row.pinned == true) ? "Unpin" : "Pin") { Task { await store.pinSession(row) } }
+                        Button("Rename") {
+                            renameSid = row.sid
+                            renameDraft = row.displayTitle
+                        }
                         Button(row.archived ? "Unarchive" : "Archive") { Task { await store.archiveSession(row) } }
                         Button("Duplicate") { Task { await store.duplicateSession(row.sid) } }
                         Button("Share link") { Task { await store.shareSession(row.sid) } }
@@ -481,6 +487,21 @@ struct DrawerBody: View {
         .padding(.leading, 18)
         .padding(.trailing, 8)
         .padding(.bottom, 8)
+        .alert("Rename conversation", isPresented: Binding(
+            get: { !renameSid.isEmpty },
+            set: { if !$0 { renameSid = ""; renameDraft = "" } }
+        )) {
+            TextField("Title", text: $renameDraft)
+            Button("Save") {
+                let sid = renameSid
+                let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                renameSid = ""
+                renameDraft = ""
+                guard !sid.isEmpty, !title.isEmpty else { return }
+                Task { await store.renameSession(sid, title) }
+            }
+            Button("Cancel", role: .cancel) { renameSid = ""; renameDraft = "" }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .text]) { result in
             guard case .success(let url) = result else { return }
             let access = url.startAccessingSecurityScopedResource()

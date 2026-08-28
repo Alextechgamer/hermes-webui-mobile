@@ -279,6 +279,7 @@ struct ChatPane: View {
                             } label: {
                                 Image(systemName: "paperclip").font(.system(size: 16)).foregroundColor(Palette.muted).frame(width: 32, height: 32)
                             }
+                            .accessibilityLabel("Attach")
 
                         Button { showPrompts.toggle(); showModels = false; showProfiles = false } label: {
                             Image(systemName: "bookmark").font(.system(size: 16)).foregroundColor(Palette.muted).frame(width: 32, height: 32)
