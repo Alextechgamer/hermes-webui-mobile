@@ -159,8 +159,11 @@ class ApiClient(base: String, prefs: Prefs) {
         }
     }
 
-    fun sessions(source: String = ""): SessionsResult {
-        val qs = if (source == "cli") "?source=cli" else ""
+    fun sessions(source: String = "", includeArchived: Boolean = false): SessionsResult {
+        val parts = mutableListOf<String>()
+        if (source == "cli") parts += "source=cli"
+        if (includeArchived) parts += "include_archived=1"
+        val qs = if (parts.isEmpty()) "" else "?" + parts.joinToString("&")
         val el = parse("/api/sessions$qs")
         val arr = el.arrayOf("sessions", "data", "items")
         val o = el.asObj()
@@ -197,6 +200,67 @@ class ApiClient(base: String, prefs: Prefs) {
 
     fun deleteSession(sid: String) {
         postRaw("/api/session/delete", """{"session_id":${q(sid)}}""")
+    }
+
+    fun pinSession(sid: String, pinned: Boolean) {
+        postRaw("/api/session/pin", """{"session_id":${q(sid)},"pinned":$pinned}""")
+    }
+
+    fun archiveSession(sid: String, archived: Boolean) {
+        postRaw("/api/session/archive", """{"session_id":${q(sid)},"archived":$archived}""")
+    }
+
+    fun renameSession(sid: String, title: String) {
+        postRaw("/api/session/rename", """{"session_id":${q(sid)},"title":${q(title)}}""")
+    }
+
+    fun duplicateSession(sid: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/session/duplicate", """{"session_id":${q(sid)}}""")).asObj()
+        return el.obj("session")?.str("session_id").orEmpty().ifBlank { el.str("session_id") }
+    }
+
+    fun moveSession(sid: String, projectId: String?) {
+        val pid = if (projectId.isNullOrBlank()) "null" else q(projectId)
+        postRaw("/api/session/move", """{"session_id":${q(sid)},"project_id":$pid}""")
+    }
+
+    fun clearSession(sid: String) {
+        postRaw("/api/session/clear", """{"session_id":${q(sid)}}""")
+    }
+
+    fun shareCreate(sid: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/share/create", """{"session_id":${q(sid)}}""")).asObj()
+        return el.obj("share")?.str("url").orEmpty().ifBlank { el.str("url", "share_url") }
+    }
+
+    fun shareRevoke(sid: String) {
+        postRaw("/api/share/revoke", """{"session_id":${q(sid)}}""")
+    }
+
+    fun projects(): List<ProjectRow> {
+        val o = runCatching { parse("/api/projects").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("projects") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val id = p.str("project_id", "id")
+            if (id.isBlank()) return@mapNotNull null
+            ProjectRow(id, p.str("name", "title").ifBlank { "project" }, p.str("color"))
+        }
+    }
+
+    fun createProject(name: String): ProjectRow? {
+        val el = json.parseToJsonElement(postRaw("/api/projects/create", """{"name":${q(name)}}""")).asObj()
+        val p = el.obj("project") ?: el
+        val id = p.str("project_id", "id")
+        if (id.isBlank()) return null
+        return ProjectRow(id, p.str("name").ifBlank { name }, p.str("color"))
+    }
+
+    fun deleteProject(id: String) {
+        postRaw("/api/projects/delete", """{"project_id":${q(id)}}""")
+    }
+
+    fun renameProject(id: String, name: String) {
+        postRaw("/api/projects/rename", """{"project_id":${q(id)},"name":${q(name)}}""")
     }
 
     fun startChat(
@@ -482,6 +546,19 @@ class ApiClient(base: String, prefs: Prefs) {
 
     fun switchKanbanBoard(slug: String) {
         postRaw("/api/kanban/boards/${enc(slug)}/switch", "{}")
+    }
+
+    fun createKanbanBoard(name: String, slug: String) {
+        postRaw(
+            "/api/kanban/boards",
+            """{"slug":${q(slug)},"name":${q(name)},"description":"","icon":"","color":"","switch":true}""",
+        )
+    }
+
+    fun bulkKanban(ids: List<String>, status: String, board: String) {
+        if (ids.isEmpty()) return
+        val body = """{"ids":[${ids.joinToString(",") { q(it) }}],"status":${q(status)}}"""
+        postRaw("/api/kanban/tasks/bulk${kanbanQs(board)}", body)
     }
 
     fun createKanbanTask(title: String, board: String) {
@@ -994,6 +1071,8 @@ private fun JsonObject.toSession(): SessionRow? {
         source = str("source"),
         model = str("model"),
         pinned = bool("pinned"),
+        archived = bool("archived"),
+        projectId = str("project_id"),
     )
 }
 

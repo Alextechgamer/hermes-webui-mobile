@@ -113,9 +113,17 @@ data class SessionRow(
     val source: String = "",
     val model: String = "",
     val pinned: Boolean = false,
+    val archived: Boolean = false,
+    val projectId: String = "",
 ) {
     val displayTitle: String get() = title.ifBlank { "New conversation" }
 }
+
+data class ProjectRow(
+    val id: String,
+    val name: String,
+    val color: String = "",
+)
 
 data class ChatMsg(
     val id: String,
@@ -266,7 +274,11 @@ data class SettingItem(
     val key: String,
     val type: String,
     val value: String,
-)
+) {
+    val label: String get() = key.split('_').joinToString(" ") { part ->
+        part.replaceFirstChar { c -> c.uppercase() }
+    }
+}
 
 data class SessionLoad(
     val title: String,

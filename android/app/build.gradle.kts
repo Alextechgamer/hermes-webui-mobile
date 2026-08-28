@@ -11,8 +11,8 @@ android {
         applicationId = "com.hermes.webui"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "0.9.17"
+        versionCode = 30
+        versionName = "0.9.18"
     }
     buildTypes {
         release {

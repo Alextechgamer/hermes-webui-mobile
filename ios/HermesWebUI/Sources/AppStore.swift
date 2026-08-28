@@ -11,6 +11,13 @@ final class AppStore: ObservableObject {
     @Published var sessionSource = ""
     @Published var webuiSessionCount = 0
     @Published var cliSessionCount = 0
+    @Published var includeArchived = false
+    @Published var projects: [ProjectRow] = []
+    @Published var activeProjectId = ""
+    @Published var shareNotice: String?
+    @Published var kanbanSelected: Set<String> = []
+    @Published var kanbanBulkStatus = "done"
+    @Published var settingsQuery = ""
     @Published var messages: [ChatMessage] = []
     @Published var liveText: String = ""
     @Published var title: String = "Hermes"
@@ -174,10 +181,11 @@ final class AppStore: ObservableObject {
     func loadSessions() async {
         guard let c = client else { return }
         do {
-            let res = try await c.sessions(source: sessionSource)
+            let res = try await c.sessions(source: sessionSource, includeArchived: includeArchived)
             sessions = res.rows
             webuiSessionCount = res.webuiCount
             cliSessionCount = res.cliCount
+            projects = await c.projects()
         } catch { self.error = error.localizedDescription }
     }
 
@@ -591,6 +599,54 @@ final class AppStore: ObservableObject {
         await loadSessions()
     }
 
+    func pinSession(_ row: SessionRow) async {
+        await client?.pinSession(id: row.sid, pinned: !(row.pinned ?? false))
+        await loadSessions()
+    }
+
+    func archiveSession(_ row: SessionRow) async {
+        await client?.archiveSession(id: row.sid, archived: !row.archived)
+        await loadSessions()
+    }
+
+    func renameSession(_ id: String, _ titleText: String) async {
+        await client?.renameSession(id: id, title: titleText)
+        if currentSid == id { title = titleText }
+        await loadSessions()
+    }
+
+    func duplicateSession(_ id: String) async {
+        _ = await client?.duplicateSession(id: id)
+        await loadSessions()
+    }
+
+    func moveSession(_ id: String, _ projectId: String?) async {
+        await client?.moveSession(id: id, projectId: projectId)
+        await loadSessions()
+    }
+
+    func clearSession(_ id: String) async {
+        await client?.clearSession(id: id)
+        if currentSid == id { messages = []; liveText = "" }
+    }
+
+    func shareSession(_ id: String) async {
+        let url = await client?.shareCreate(id: id) ?? ""
+        shareNotice = url.isEmpty ? "Share failed" : url
+        if !url.isEmpty { UIPasteboard.general.string = url }
+    }
+
+    func createProject(_ name: String) async {
+        await client?.createProject(name: name)
+        await loadSessions()
+    }
+
+    func deleteProject(_ id: String) async {
+        await client?.deleteProject(id: id)
+        if activeProjectId == id { activeProjectId = "" }
+        await loadSessions()
+    }
+
     private func flushLive() {
         if !liveText.isEmpty {
             let text = liveText
@@ -812,6 +868,27 @@ final class AppStore: ObservableObject {
 
     func dispatchKanban(dry: Bool) async {
         await client?.dispatchKanban(board: kanbanBoard, dryRun: dry)
+        await loadKanban()
+    }
+
+    func createKanbanBoard(_ name: String) async {
+        let slug = name.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        guard !slug.isEmpty else { return }
+        await client?.createKanbanBoard(name: name, slug: slug)
+        kanbanBoard = slug
+        await loadKanban()
+    }
+
+    func toggleKanbanSelect(_ id: String) {
+        if kanbanSelected.contains(id) { kanbanSelected.remove(id) } else { kanbanSelected.insert(id) }
+    }
+
+    func bulkKanban() async {
+        let ids = Array(kanbanSelected)
+        guard !ids.isEmpty else { return }
+        await client?.bulkKanban(ids: ids, status: kanbanBulkStatus, board: kanbanBoard)
+        kanbanSelected.removeAll()
         await loadKanban()
     }
 

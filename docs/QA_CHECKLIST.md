@@ -44,9 +44,7 @@ the migration row.
   Terminal stay off the rail (composer chips). Kanban on iOS has the same
   board switcher / search / assignee filters / add / complete / archive as
   Android — not tap-to-advance columns.
-- [ ] **Conversations dropdown** — collapsed by default, `Conversations · N`
-  count is the real message-bearing count (not 0), expand state survives
-  app restart.
+- [ ] **Conversations** — WebUI/CLI tabs, project chips, pin/archive/rename/duplicate/share/move/delete from the overflow/context menu.
 - [ ] **Session counts** — iOS drawer and Recent conversations show real
   message counts, never a wall of "0 messages".
 - [ ] **History rendering** — open a session with tool calls and (if

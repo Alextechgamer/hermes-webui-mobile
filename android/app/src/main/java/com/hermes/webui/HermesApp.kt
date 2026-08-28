@@ -282,6 +282,10 @@ private fun ConversationDropdown(vm: AppVm, close: () -> Unit) {
 
 @Composable
 private fun ConversationList(vm: AppVm, close: () -> Unit) {
+    var menuSid by remember { mutableStateOf<String?>(null) }
+    var renameSid by remember { mutableStateOf<String?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var newProject by remember { mutableStateOf("") }
     Column {
         Row(
             Modifier
@@ -326,33 +330,139 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
                 )
             }
         }
-        val shown = vm.sessions.filter {
-            q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val allOn = vm.activeProjectId.value.isEmpty()
+            Text(
+                "All",
+                color = if (allOn) Wui.AccentText else Wui.Muted,
+                fontSize = 12.sp,
+                modifier = Modifier.clip(WuiShapeMd).background(if (allOn) Wui.AccentBg else Wui.Surface).clickable { vm.activeProjectId.value = "" }.padding(10.dp, 5.dp),
+            )
+            vm.projects.forEach { p ->
+                val on = vm.activeProjectId.value == p.id
+                Text(
+                    p.name,
+                    color = if (on) Wui.AccentText else Wui.Muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.clip(WuiShapeMd).background(if (on) Wui.AccentBg else Wui.Surface).clickable { vm.activeProjectId.value = p.id }.padding(10.dp, 5.dp),
+                )
+            }
+            Text(
+                if (vm.includeArchived.value) "Hide archived" else "Archived",
+                color = if (vm.includeArchived.value) Wui.AccentText else Wui.Muted,
+                fontSize = 12.sp,
+                modifier = Modifier.clip(WuiShapeMd).background(Wui.Surface).clickable {
+                    vm.includeArchived.value = !vm.includeArchived.value
+                    vm.refreshSessions()
+                }.padding(10.dp, 5.dp),
+            )
         }
+        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicTextField(
+                value = newProject,
+                onValueChange = { newProject = it },
+                singleLine = true,
+                textStyle = TextStyle(color = Wui.Text, fontSize = 12.sp),
+                cursorBrush = SolidColor(Wui.Accent),
+                modifier = Modifier.weight(1f).clip(WuiShapeMd).background(Wui.InputBg).padding(10.dp, 6.dp),
+                decorationBox = { inner ->
+                    if (newProject.isEmpty()) Text("New project name", color = Wui.Muted, fontSize = 12.sp)
+                    inner()
+                },
+            )
+            Text(
+                "+",
+                color = Wui.Accent,
+                modifier = Modifier.clickable {
+                    if (newProject.isNotBlank()) { vm.createProject(newProject.trim()); newProject = "" }
+                }.padding(10.dp),
+            )
+        }
+        vm.shareNotice.value?.let { notice ->
+            Text(notice, color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(8.dp).clickable { vm.shareNotice.value = null })
+        }
+        val shown = vm.sessions.filter {
+            val qOk = q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
+            val pOk = vm.activeProjectId.value.isEmpty() || it.projectId == vm.activeProjectId.value
+            qOk && pOk
+        }.sortedWith(compareByDescending<SessionRow> { it.pinned }.thenByDescending { it.msgCount })
         if (shown.isEmpty()) {
             Text("No conversations yet.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp, 6.dp))
         }
         shown.take(80).forEach { row ->
             val active = row.sid == vm.sid
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(vertical = 1.dp)
                     .clip(WuiShapeMd)
-                    .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent)
-                    .clickable { vm.open(row); close() }
-                    .padding(10.dp, 8.dp),
+                    .background(if (active) Wui.AccentBg else androidx.compose.ui.graphics.Color.Transparent),
             ) {
-                if (active) {
-                    Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(row.displayTitle, color = if (active) Wui.AccentText else Wui.Text, fontSize = 13.sp, maxLines = 2)
+                Row(
+                    Modifier.clickable { vm.open(row); close() }.padding(10.dp, 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (active) {
+                        Box(Modifier.padding(end = 8.dp).width(2.dp).height(28.dp).clip(CircleShape).background(Wui.Accent))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            (if (row.pinned) "📌 " else "") + row.displayTitle + (if (row.archived) " (archived)" else ""),
+                            color = if (active) Wui.AccentText else Wui.Text,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                        )
+                        val proj = vm.projects.firstOrNull { it.id == row.projectId }?.name
+                        Text(
+                            "${row.msgCount} messages" +
+                                (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") +
+                                (proj?.let { " · $it" } ?: ""),
+                            color = Wui.Muted,
+                            fontSize = 11.sp,
+                        )
+                    }
                     Text(
-                        "${row.msgCount} messages" + (row.source.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                        "···",
                         color = Wui.Muted,
-                        fontSize = 11.sp,
+                        modifier = Modifier.clickable { menuSid = if (menuSid == row.sid) null else row.sid }.padding(8.dp),
                     )
+                }
+                if (renameSid == row.sid) {
+                    Row(Modifier.padding(10.dp, 0.dp, 10.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicTextField(
+                            value = renameDraft,
+                            onValueChange = { renameDraft = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Wui.Text, fontSize = 13.sp),
+                            cursorBrush = SolidColor(Wui.Accent),
+                            modifier = Modifier.weight(1f).clip(WuiShapeMd).background(Wui.InputBg).padding(8.dp),
+                        )
+                        Text("Save", color = Wui.Accent, modifier = Modifier.clickable {
+                            if (renameDraft.isNotBlank()) vm.renameSession(row.sid, renameDraft.trim())
+                            renameSid = null
+                        }.padding(8.dp))
+                    }
+                }
+                if (menuSid == row.sid) {
+                    Column(Modifier.padding(10.dp, 0.dp, 10.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        listOf(
+                            (if (row.pinned) "Unpin" else "Pin") to { vm.pinSession(row) },
+                            (if (row.archived) "Unarchive" else "Archive") to { vm.archiveSession(row) },
+                            "Rename" to { renameSid = row.sid; renameDraft = row.title },
+                            "Duplicate" to { vm.duplicateSession(row.sid) },
+                            "Share link" to { vm.shareSession(row.sid) },
+                            "Clear messages" to { vm.clearSession(row.sid) },
+                        ).forEach { (label, run) ->
+                            Text(label, color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp).clickable { run(); menuSid = null })
+                        }
+                        vm.projects.forEach { p ->
+                            Text("Move to ${p.name}", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp).clickable { vm.moveSession(row.sid, p.id); menuSid = null })
+                        }
+                        if (row.projectId.isNotBlank()) {
+                            Text("Remove from project", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp).clickable { vm.moveSession(row.sid, null); menuSid = null })
+                        }
+                        Text("Delete", color = Wui.Danger, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp).clickable { vm.deleteSession(row.sid); menuSid = null })
+                    }
                 }
             }
         }

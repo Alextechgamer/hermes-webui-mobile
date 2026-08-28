@@ -6,8 +6,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "0.9.17"
-    CURRENT_PROJECT_VERSION: "29"
+    MARKETING_VERSION: "0.9.18"
+    CURRENT_PROJECT_VERSION: "30"
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1,2"
 targets:

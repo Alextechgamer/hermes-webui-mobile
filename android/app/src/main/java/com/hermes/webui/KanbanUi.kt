@@ -127,6 +127,18 @@ private fun KanbanToolbar(vm: AppVm, tenants: List<String>) {
                     }
                 }
                 if (vm.kanbanBoards.isEmpty()) Text("No boards.", color = Wui.Muted, modifier = Modifier.padding(12.dp))
+                var newBoard by remember { mutableStateOf("") }
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        newBoard, { newBoard = it },
+                        placeholder = { Text("New board name", color = Wui.Muted) },
+                        singleLine = true, colors = kanbanFields(), modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Create", color = Wui.Accent, modifier = Modifier.clickable {
+                        if (newBoard.isNotBlank()) { vm.createKanbanBoard(newBoard); newBoard = ""; boardsOpen = false }
+                    })
+                }
             }
         }
         OutlinedTextField(
@@ -160,6 +172,13 @@ private fun KanbanToolbar(vm: AppVm, tenants: List<String>) {
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Preview dispatcher", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.clickable { vm.dispatchKanban(true) })
             Text("Run dispatcher", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.clickable { vm.dispatchKanban(false) })
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Bulk ${vm.kanbanSelected.size}", color = Wui.Muted, fontSize = 12.sp)
+            listOf("triage", "todo", "ready", "blocked", "done", "archived").forEach { s ->
+                FilterChip(s.replaceFirstChar { it.uppercase() }, vm.kanbanBulkStatus.value == s) { vm.kanbanBulkStatus.value = s }
+            }
+            Text("Apply", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.clickable { vm.bulkKanban() }.padding(8.dp, 4.dp))
         }
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
@@ -221,6 +240,8 @@ private fun KanbanCard(vm: AppVm, task: KanbanTask) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(task.id, color = Wui.Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            val sel = vm.kanbanSelected.contains(task.id)
+            Text(if (sel) "☑" else "☐", color = if (sel) Wui.Accent else Wui.Muted, modifier = Modifier.clickable { vm.toggleKanbanSelect(task.id) }.padding(4.dp))
             val p = task.priority.trim().removePrefix("P").removePrefix("p")
             if (p.isNotBlank() && p != "0") {
                 Text("P$p", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))

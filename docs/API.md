@@ -64,6 +64,8 @@ Auth is cookie + CSRF. No bearer token.
 | Todos | from session `todo_state` / last tool `{todos}` | — |
 | Insights | WebUI `GET /api/insights?days=` + `GET /api/skills/usage`. Period 7/30/90/365. **Not** `:8790`. | — |
 | Console (Settings → System) | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` | — |
+| Sessions extras | `GET /api/projects`; pin/archive/rename/duplicate/move/clear/share | `/api/session/{pin,archive,rename,duplicate,move,clear,delete}`, `/api/share/{create,revoke}`, `/api/projects/{create,delete,rename}` |
+| Kanban extras | boards list | `POST /api/kanban/boards` `{slug,name,switch}`, `POST /api/kanban/tasks/bulk` `{ids,status}` |
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |

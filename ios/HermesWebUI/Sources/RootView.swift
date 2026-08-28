@@ -272,6 +272,7 @@ struct RootView: View {
 struct DrawerBody: View {
     @ObservedObject var store: AppStore
     @Binding var show: Bool
+    @State private var newProject = ""
     @AppStorage("chatsExpanded") private var chatsExpanded = false
 
     var body: some View {
@@ -382,6 +383,34 @@ struct DrawerBody: View {
                 }
                 .padding(.vertical, 4)
 
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        sourceChip("All", store.activeProjectId.isEmpty) { store.activeProjectId = "" }
+                        ForEach(store.projects) { p in
+                            sourceChip(p.name, store.activeProjectId == p.id) { store.activeProjectId = p.id }
+                        }
+                        sourceChip(store.includeArchived ? "Hide archived" : "Archived", store.includeArchived) {
+                            store.includeArchived.toggle()
+                            Task { await store.loadSessions() }
+                        }
+                    }
+                }
+                HStack {
+                    TextField("New project name", text: $newProject)
+                        .foregroundColor(Palette.text).font(.system(size: 12))
+                    Button("+") {
+                        let n = newProject.trimmingCharacters(in: .whitespaces)
+                        guard !n.isEmpty else { return }
+                        Task { await store.createProject(n) }
+                        newProject = ""
+                    }.foregroundColor(Palette.accent)
+                }
+                .padding(8).background(Palette.inputBg).cornerRadius(8)
+                if let notice = store.shareNotice {
+                    Text(notice).font(.system(size: 11)).foregroundColor(Palette.accent)
+                        .onTapGesture { store.shareNotice = nil }
+                }
+
                 if filtered.isEmpty {
                     Text("No conversations yet.")
                         .font(.system(size: 12))
@@ -402,12 +431,12 @@ struct DrawerBody: View {
                                     .frame(width: 2, height: 28)
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(row.displayTitle)
+                                Text(((row.pinned == true) ? "📌 " : "") + row.displayTitle + (row.archived ? " (archived)" : ""))
                                     .font(.system(size: 13))
                                     .foregroundColor(active ? Palette.accentText : Palette.text)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
-                                Text("\(row.msgCount) messages" + ((row.source?.isEmpty == false) ? " · \(row.source!)" : ""))
+                                Text("\(row.msgCount) messages" + ((row.source?.isEmpty == false) ? " · \(row.source!)" : "") + (store.projects.first(where: { $0.id == row.projectId }).map { " · \($0.name)" } ?? ""))
                                     .font(.system(size: 11))
                                     .foregroundColor(Palette.muted)
                             }
@@ -416,6 +445,20 @@ struct DrawerBody: View {
                         .padding(10)
                         .background(active ? Palette.accentBg : Color.clear)
                         .cornerRadius(12)
+                    }
+                    .contextMenu {
+                        Button((row.pinned == true) ? "Unpin" : "Pin") { Task { await store.pinSession(row) } }
+                        Button(row.archived ? "Unarchive" : "Archive") { Task { await store.archiveSession(row) } }
+                        Button("Duplicate") { Task { await store.duplicateSession(row.sid) } }
+                        Button("Share link") { Task { await store.shareSession(row.sid) } }
+                        Button("Clear messages") { Task { await store.clearSession(row.sid) } }
+                        ForEach(store.projects) { p in
+                            Button("Move to \(p.name)") { Task { await store.moveSession(row.sid, p.id) } }
+                        }
+                        if !row.projectId.isEmpty {
+                            Button("Remove from project") { Task { await store.moveSession(row.sid, nil) } }
+                        }
+                        Button("Delete", role: .destructive) { Task { await store.deleteSession(row.sid) } }
                     }
                 }
             }
@@ -427,9 +470,13 @@ struct DrawerBody: View {
 
     private var filtered: [SessionRow] {
         let q = store.sessionQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        if q.isEmpty { return store.sessions }
         return store.sessions.filter {
-            $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q)
+            let qOk = q.isEmpty || $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q)
+            let pOk = store.activeProjectId.isEmpty || $0.projectId == store.activeProjectId
+            return qOk && pOk
+        }.sorted { a, b in
+            if (a.pinned == true) != (b.pinned == true) { return a.pinned == true }
+            return a.msgCount > b.msgCount
         }
     }
 

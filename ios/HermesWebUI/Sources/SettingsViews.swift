@@ -57,7 +57,10 @@ struct KeySettings: View {
     let section: SettingsSection
 
     var body: some View {
-        let items = store.settingsItems.filter { $0.section() == section }
+        let q = store.settingsQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let items = store.settingsItems.filter {
+            $0.section() == section && (q.isEmpty || $0.key.lowercased().contains(q) || $0.label.lowercased().contains(q))
+        }
         VStack(alignment: .leading, spacing: 0) {
             Text(section.label)
                 .font(.system(size: 18, weight: .semibold))
@@ -65,6 +68,13 @@ struct KeySettings: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 4)
+            TextField("Search settings…", text: $store.settingsQuery)
+                .foregroundColor(Palette.text)
+                .padding(10)
+                .background(Palette.surface)
+                .cornerRadius(8)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             Text(blurb)
                 .font(.system(size: 12))
                 .foregroundColor(Palette.muted)
@@ -107,9 +117,12 @@ struct SettingRow: View {
     var body: some View {
         let current = store.settingEdits[item.key] ?? item.value
         VStack(alignment: .leading, spacing: 6) {
+            Text(item.label)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Palette.text)
             Text(item.key)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(Palette.accentText)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Palette.muted)
             if item.type == "bool" {
                 Toggle("", isOn: Binding(
                     get: { current == "true" },

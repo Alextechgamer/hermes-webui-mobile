@@ -36,6 +36,13 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val sessionSource = mutableStateOf("")           // "" = webui, "cli" = CLI sessions
     val webuiSessionCount = mutableStateOf(0)
     val cliSessionCount = mutableStateOf(0)
+    val includeArchived = mutableStateOf(false)
+    val projects = mutableStateListOf<ProjectRow>()
+    val activeProjectId = mutableStateOf("")
+    val shareNotice = mutableStateOf<String?>(null)
+    val kanbanSelected = mutableStateListOf<String>()
+    val kanbanBulkStatus = mutableStateOf("done")
+    val settingsQuery = mutableStateOf("")
     val bubbles = mutableStateListOf<ChatMsg>()
     val live = mutableStateOf("")
     val busy = mutableStateOf(false)
@@ -307,10 +314,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         viewModelScope.launch {
             try {
-                val res = withContext(Dispatchers.IO) { c.sessions(sessionSource.value) }
+                val res = withContext(Dispatchers.IO) { c.sessions(sessionSource.value, includeArchived.value) }
                 sessions.clear(); sessions.addAll(res.rows)
                 webuiSessionCount.value = res.webuiCount
                 cliSessionCount.value = res.cliCount
+                val proj = withContext(Dispatchers.IO) { runCatching { c.projects() }.getOrDefault(emptyList()) }
+                projects.clear(); projects.addAll(proj)
             } catch (e: Exception) { error.value = e.message }
         }
     }
@@ -435,6 +444,85 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             if (sid == id) {
                 sid = ""; bubbles.clear(); live.value = ""; title.value = "Hermes"
             }
+            refreshSessions()
+        }
+    }
+
+    fun pinSession(row: SessionRow) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.pinSession(row.sid, !row.pinned) } }
+            refreshSessions()
+        }
+    }
+
+    fun archiveSession(row: SessionRow) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.archiveSession(row.sid, !row.archived) } }
+            refreshSessions()
+        }
+    }
+
+    fun renameSession(sid: String, titleText: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.renameSession(sid, titleText) } }
+            if (this@AppVm.sid == sid) title.value = titleText
+            refreshSessions()
+        }
+    }
+
+    fun duplicateSession(sid: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val newId = withContext(Dispatchers.IO) { runCatching { c.duplicateSession(sid) }.getOrDefault("") }
+            refreshSessions()
+            if (newId.isNotBlank()) {
+                sessions.firstOrNull { it.sid == newId }?.let { open(it) }
+            }
+        }
+    }
+
+    fun moveSession(sid: String, projectId: String?) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.moveSession(sid, projectId) } }
+            refreshSessions()
+        }
+    }
+
+    fun clearSession(sid: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.clearSession(sid) } }
+            if (this@AppVm.sid == sid) { bubbles.clear(); live.value = "" }
+        }
+    }
+
+    fun shareSession(sid: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val url = withContext(Dispatchers.IO) { runCatching { c.shareCreate(sid) }.getOrNull() }
+            shareNotice.value = if (url.isNullOrBlank()) "Share failed" else url
+        }
+    }
+
+    fun createProject(name: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createProject(name) }
+                refreshSessions()
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun deleteProject(id: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.deleteProject(id) } }
+            if (activeProjectId.value == id) activeProjectId.value = ""
             refreshSessions()
         }
     }
@@ -680,6 +768,35 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         viewModelScope.launch {
             withContext(Dispatchers.IO) { runCatching { c.dispatchKanban(kanbanBoard.value, dry) } }
+            loadKanban()
+        }
+    }
+
+    fun createKanbanBoard(name: String) {
+        val slug = name.trim().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        if (slug.isEmpty()) return
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createKanbanBoard(name.trim(), slug) }
+                kanbanBoard.value = slug
+                loadKanban()
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun toggleKanbanSelect(id: String) {
+        if (kanbanSelected.contains(id)) kanbanSelected.remove(id) else kanbanSelected.add(id)
+    }
+
+    fun bulkKanban() {
+        val ids = kanbanSelected.toList()
+        if (ids.isEmpty()) return
+        val status = kanbanBulkStatus.value
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.bulkKanban(ids, status, kanbanBoard.value) } }
+            kanbanSelected.clear()
             loadKanban()
         }
     }

@@ -17,6 +17,8 @@ struct SessionRow: Identifiable {
     var updated_at: String? = nil
     var model: String? = nil
     var pinned: Bool? = nil
+    var archived: Bool = false
+    var projectId: String = ""
 
     var sid: String { session_id ?? raw_id ?? "" }
     var id: String { sid }
@@ -25,6 +27,12 @@ struct SessionRow: Identifiable {
         return t.isEmpty ? "New conversation" : t
     }
     var msgCount: Int { messages ?? message_count ?? 0 }
+}
+
+struct ProjectRow: Identifiable {
+    var id: String
+    var name: String
+    var color: String = ""
 }
 
 struct SessionList {
@@ -203,6 +211,9 @@ struct SettingItem: Identifiable {
     var key: String
     var type: String
     var value: String
+    var label: String {
+        key.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    }
 
     func section() -> SettingsSection {
         let k = key.lowercased()

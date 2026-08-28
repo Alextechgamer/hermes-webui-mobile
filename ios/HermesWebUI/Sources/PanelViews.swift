@@ -75,6 +75,7 @@ struct TasksPane: View {
 struct KanbanPane: View {
     @ObservedObject var store: AppStore
     @State private var boardsOpen = false
+    @State private var newBoard = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
@@ -135,6 +136,13 @@ struct KanbanPane: View {
                     if store.kanbanBoards.isEmpty {
                         Text("No boards.").foregroundColor(Palette.muted).padding(10)
                     }
+                    HStack {
+                        TextField("New board name", text: $newBoard)
+                            .foregroundColor(Palette.text)
+                        Button("Create") {
+                            Task { await store.createKanbanBoard(newBoard); newBoard = ""; boardsOpen = false }
+                        }.foregroundColor(Palette.accent)
+                    }.padding(10)
                 }
                 .background(Palette.surface).cornerRadius(10)
             }
@@ -186,6 +194,15 @@ struct KanbanPane: View {
                 Button("Preview dispatcher") { Task { await store.dispatchKanban(dry: true) } }
                 Button("Run dispatcher") { Task { await store.dispatchKanban(dry: false) } }
             }.font(.caption).foregroundColor(Palette.accent)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Text("Bulk \(store.kanbanSelected.count)").font(.caption).foregroundColor(Palette.muted)
+                    ForEach(["triage","todo","ready","blocked","done","archived"], id: \.self) { s in
+                        chip(s.capitalized, store.kanbanBulkStatus == s) { store.kanbanBulkStatus = s }
+                    }
+                    Button("Apply") { Task { await store.bulkKanban() } }.font(.caption).foregroundColor(Palette.accent)
+                }
+            }
             HStack {
                 TextField("New task", text: $store.kanbanDraft)
                     .padding(10).background(Palette.bg).overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border)).foregroundColor(Palette.text)
@@ -248,6 +265,8 @@ struct KanbanPane: View {
             HStack {
                 Text(task.id).font(.system(.caption2, design: .monospaced)).foregroundColor(Palette.muted).lineLimit(1)
                 Spacer()
+                Button(store.kanbanSelected.contains(task.id) ? "☑" : "☐") { store.toggleKanbanSelect(task.id) }
+                    .foregroundColor(store.kanbanSelected.contains(task.id) ? Palette.accent : Palette.muted)
                 if !p.isEmpty && p != "0" {
                     Text("P\(p)").font(.caption2.bold()).foregroundColor(Palette.accent)
                 }

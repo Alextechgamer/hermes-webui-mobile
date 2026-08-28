@@ -95,9 +95,20 @@ fun SettingsPane(vm: AppVm) {
 
 @Composable
 private fun KeySettings(vm: AppVm, section: SettingsSection) {
-    val items = vm.settingsItems.filter { it.section() == section }
+    val q = vm.settingsQuery.value.trim().lowercase()
+    val items = vm.settingsItems.filter {
+        it.section() == section && (q.isEmpty() || it.key.lowercase().contains(q) || it.label.lowercase().contains(q))
+    }
     Column(Modifier.fillMaxSize()) {
         Text(section.label, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(16.dp, 14.dp, 16.dp, 4.dp))
+        OutlinedTextField(
+            vm.settingsQuery.value,
+            { vm.settingsQuery.value = it },
+            placeholder = { Text("Search settings…", color = Wui.Muted) },
+            colors = fieldColors(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(16.dp, 0.dp, 16.dp, 8.dp),
+        )
         Text(
             when (section) {
                 SettingsSection.Conversation -> "Transcript, tools, and how this chat behaves."
@@ -127,7 +138,8 @@ private fun KeySettings(vm: AppVm, section: SettingsSection) {
 private fun SettingRow(vm: AppVm, item: SettingItem) {
     val current = vm.settingEdits.value[item.key] ?: item.value
     Column(Modifier.padding(16.dp, 8.dp)) {
-        Text(item.key, color = Wui.AccentText, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text(item.label, color = Wui.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(item.key, color = Wui.Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
         if (item.type == "bool") {
             Switch(
                 checked = current == "true",

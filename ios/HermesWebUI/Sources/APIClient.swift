@@ -106,8 +106,11 @@ final class APIClient {
         }
     }
 
-    func sessions(source: String = "") async throws -> SessionsResult {
-        let qs = source == "cli" ? "?source=cli" : ""
+    func sessions(source: String = "", includeArchived: Bool = false) async throws -> SessionsResult {
+        var parts: [String] = []
+        if source == "cli" { parts.append("source=cli") }
+        if includeArchived { parts.append("include_archived=1") }
+        let qs = parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
         let data = try await getData("/api/sessions\(qs)")
         let obj = try JSONSerialization.jsonObject(with: data)
         var raw: [Any] = []
@@ -136,6 +139,8 @@ final class APIClient {
             row.updated_at = first(d, "updated_at")
             row.model = first(d, "model")
             if let b = d["pinned"] as? Bool { row.pinned = b }
+            row.archived = (d["archived"] as? Bool) ?? false
+            row.projectId = (d["project_id"] as? String) ?? ""
             return row
         }
         return SessionsResult(rows: rows, webuiCount: webuiCount, cliCount: cliCount)
@@ -222,6 +227,59 @@ final class APIClient {
 
     func deleteSession(id: String) async {
         _ = try? await postJSON("/api/session/delete", body: ["session_id": id])
+    }
+
+    func pinSession(id: String, pinned: Bool) async {
+        _ = try? await postJSON("/api/session/pin", body: ["session_id": id, "pinned": pinned])
+    }
+
+    func archiveSession(id: String, archived: Bool) async {
+        _ = try? await postJSON("/api/session/archive", body: ["session_id": id, "archived": archived])
+    }
+
+    func renameSession(id: String, title: String) async {
+        _ = try? await postJSON("/api/session/rename", body: ["session_id": id, "title": title])
+    }
+
+    func duplicateSession(id: String) async -> String {
+        guard let data = try? await postJSON("/api/session/duplicate", body: ["session_id": id]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        if let s = obj["session"] as? [String: Any] { return (s["session_id"] as? String) ?? "" }
+        return (obj["session_id"] as? String) ?? ""
+    }
+
+    func moveSession(id: String, projectId: String?) async {
+        var body: [String: Any] = ["session_id": id]
+        body["project_id"] = projectId as Any? ?? NSNull()
+        _ = try? await postJSON("/api/session/move", body: body)
+    }
+
+    func clearSession(id: String) async {
+        _ = try? await postJSON("/api/session/clear", body: ["session_id": id])
+    }
+
+    func shareCreate(id: String) async -> String {
+        guard let data = try? await postJSON("/api/share/create", body: ["session_id": id]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        if let share = obj["share"] as? [String: Any] { return (share["url"] as? String) ?? "" }
+        return (obj["url"] as? String) ?? ""
+    }
+
+    func projects() async -> [ProjectRow] {
+        guard let o = try? await dict("/api/projects") else { return [] }
+        return (o["projects"] as? [[String: Any]] ?? []).compactMap { p in
+            let id = (p["project_id"] as? String) ?? (p["id"] as? String) ?? ""
+            guard !id.isEmpty else { return nil }
+            return ProjectRow(id: id, name: (p["name"] as? String) ?? "project", color: (p["color"] as? String) ?? "")
+        }
+    }
+
+    func createProject(name: String) async {
+        _ = try? await postJSON("/api/projects/create", body: ["name": name])
+    }
+
+    func deleteProject(id: String) async {
+        _ = try? await postJSON("/api/projects/delete", body: ["project_id": id])
     }
 
     func startChat(sessionId: String, message: String, model: String?, attachments: [String] = [], modelProvider: String? = nil) async throws -> ChatStart {
@@ -541,6 +599,17 @@ final class APIClient {
 
     func switchKanbanBoard(_ slug: String) async {
         _ = try? await sendJSON("POST", "/api/kanban/boards/\(q(slug))/switch", body: [:])
+    }
+
+    func createKanbanBoard(name: String, slug: String) async {
+        _ = try? await sendJSON("POST", "/api/kanban/boards", body: [
+            "slug": slug, "name": name, "description": "", "icon": "", "color": "", "switch": true,
+        ])
+    }
+
+    func bulkKanban(ids: [String], status: String, board: String) async {
+        guard !ids.isEmpty else { return }
+        _ = try? await sendJSON("POST", "/api/kanban/tasks/bulk" + kanbanQs(board: board), body: ["ids": ids, "status": status])
     }
 
     func createKanbanTask(title: String, board: String) async {
