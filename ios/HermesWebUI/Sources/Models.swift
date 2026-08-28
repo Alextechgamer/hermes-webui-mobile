@@ -83,6 +83,21 @@ struct CronJob: Identifiable {
     var nextRun: String = ""
     var owner: String
     var readOnly: Bool
+    var deliver: String = "local"
+}
+
+struct CronRun: Identifiable {
+    var id: String { filename }
+    var filename: String
+    var size: Int = 0
+    var modified: String = ""
+}
+
+struct McpServer: Identifiable {
+    var id: String { name }
+    var name: String
+    var enabled: Bool = true
+    var description: String = ""
 }
 
 struct KanbanColumn: Identifiable {

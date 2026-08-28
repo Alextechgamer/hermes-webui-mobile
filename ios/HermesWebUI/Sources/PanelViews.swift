@@ -7,10 +7,15 @@ private let kanbanUnassigned = "__unassigned__"
 struct TasksPane: View {
     @ObservedObject var store: AppStore
     @State private var open: String?
+    @State private var editId: String?
     @State private var showNew = false
     @State private var newName = ""
     @State private var newSchedule = ""
     @State private var newPrompt = ""
+    @State private var editName = ""
+    @State private var editSchedule = ""
+    @State private var editPrompt = ""
+    @State private var editDeliver = "local"
     var body: some View {
         List {
             HStack {
@@ -57,11 +62,38 @@ struct TasksPane: View {
                             Button("Run") { Task { await store.cronAction(job.id, "run") } }
                             Button(job.paused ? "Resume" : "Pause") { Task { await store.cronAction(job.id, job.paused ? "resume" : "pause") } }
                             Button("Output") { open = job.id; Task { await store.loadJobOutput(job.id) } }
+                            Button("Edit") {
+                                editId = job.id
+                                editName = job.name
+                                editSchedule = job.schedule
+                                editPrompt = job.prompt
+                                editDeliver = job.deliver
+                            }
                             Button("Delete") { Task { await store.deleteCron(job.id) } }.foregroundColor(Palette.danger)
                         }.foregroundColor(Palette.accent).font(.caption)
                     }
-                    if open == job.id, !store.jobOutput.isEmpty {
-                        Text(String(store.jobOutput.prefix(4000))).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+                    if editId == job.id {
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("Name", text: $editName).foregroundColor(Palette.text)
+                            TextField("Schedule", text: $editSchedule).foregroundColor(Palette.text)
+                            TextField("Prompt", text: $editPrompt).foregroundColor(Palette.text)
+                            TextField("Deliver", text: $editDeliver).foregroundColor(Palette.text)
+                            Button("Save job") {
+                                Task { await store.updateCron(id: job.id, name: editName, schedule: editSchedule, prompt: editPrompt, deliver: editDeliver) }
+                                editId = nil
+                            }.foregroundColor(Palette.accent)
+                        }
+                    }
+                    if open == job.id {
+                        if !store.cronRuns.isEmpty {
+                            Text("History").font(.caption).foregroundColor(Palette.muted)
+                            ForEach(Array(store.cronRuns.prefix(12))) { run in
+                                Text("\(run.filename) · \(run.size)").font(.system(.caption2, design: .monospaced)).foregroundColor(Palette.muted)
+                            }
+                        }
+                        if !store.jobOutput.isEmpty {
+                            Text(String(store.jobOutput.prefix(4000))).font(.system(.footnote, design: .monospaced)).foregroundColor(Palette.text)
+                        }
                     }
                 }
                 .listRowBackground(Palette.surface)

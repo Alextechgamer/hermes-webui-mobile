@@ -211,6 +211,19 @@ private fun PluginsSettings(vm: AppVm) {
                 if (p.description.isNotBlank()) Text(p.description, color = Wui.Muted, fontSize = 12.sp)
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Text("MCP servers", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text("Same /api/mcp/servers list as desktop.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        if (vm.mcpServers.isEmpty()) Text("No MCP servers.", color = Wui.Muted)
+        vm.mcpServers.forEach { s ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(WuiShapeMd).background(Wui.Surface).padding(12.dp)) {
+                Row {
+                    Text(s.name, color = Wui.Text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(if (s.enabled) "on" else "off", color = if (s.enabled) Wui.Ok else Wui.Muted, fontSize = 12.sp)
+                }
+                if (s.description.isNotBlank()) Text(s.description, color = Wui.Muted, fontSize = 12.sp)
+            }
+        }
     }
 }
 

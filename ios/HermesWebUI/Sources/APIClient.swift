@@ -265,6 +265,56 @@ final class APIClient {
         return (obj["url"] as? String) ?? ""
     }
 
+    func branchSession(id: String, title: String = "") async -> String {
+        var body: [String: Any] = ["session_id": id]
+        if !title.isEmpty { body["title"] = title }
+        guard let data = try? await postJSON("/api/session/branch", body: body),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        if let s = obj["session"] as? [String: Any] { return (s["session_id"] as? String) ?? "" }
+        return (obj["session_id"] as? String) ?? ""
+    }
+
+    func importSession(jsonText: String) async -> String {
+        guard let raw = jsonText.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              let data = try? await postJSON("/api/session/import", body: obj),
+              let res = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        if let s = res["session"] as? [String: Any] { return (s["session_id"] as? String) ?? "" }
+        return (res["session_id"] as? String) ?? ""
+    }
+
+    func searchSessions(q: String) async -> [SessionRow] {
+        guard !q.isEmpty, let o = try? await dict("/api/sessions/search?q=\(self.q(q))") else { return [] }
+        return (o["sessions"] as? [[String: Any]] ?? []).compactMap { d in
+            var row = SessionRow()
+            row.session_id = (d["session_id"] as? String) ?? (d["id"] as? String)
+            row.title = d["title"] as? String
+            row.preview = (d["preview"] as? String) ?? (d["snippet"] as? String)
+            row.messages = d["messages"] as? Int
+            row.message_count = d["message_count"] as? Int
+            row.source = d["source"] as? String
+            row.pinned = d["pinned"] as? Bool
+            row.archived = (d["archived"] as? Bool) ?? false
+            row.projectId = (d["project_id"] as? String) ?? ""
+            return row.sid.isEmpty ? nil : row
+        }
+    }
+
+    func downloadExport(id: String, format: String) async throws -> Data {
+        let qs = format == "html" ? "?session_id=\(q(id))&format=html" : "?session_id=\(q(id))"
+        return try await getData("/api/session/export\(qs)")
+    }
+
+    func mcpServers() async -> [McpServer] {
+        guard let o = try? await dict("/api/mcp/servers") else { return [] }
+        return (o["servers"] as? [[String: Any]] ?? []).compactMap { s in
+            let name = (s["name"] as? String) ?? (s["id"] as? String) ?? ""
+            guard !name.isEmpty else { return nil }
+            let enabled = ((s["enabled"] as? Bool) ?? true) && !((s["disabled"] as? Bool) ?? false)
+            return McpServer(name: name, enabled: enabled, description: (s["description"] as? String) ?? "")
+        }
+    }
+
     func projects() async -> [ProjectRow] {
         guard let o = try? await dict("/api/projects") else { return [] }
         return (o["projects"] as? [[String: Any]] ?? []).compactMap { p in
@@ -521,7 +571,8 @@ final class APIClient {
                 lastRun: stringify(j["last_run"] ?? j["last_run_at"] ?? ""),
                 nextRun: stringify(j["next_run_at"] ?? j["next_run"] ?? ""),
                 owner: first(j, "owner_profile", "profile") ?? "",
-                readOnly: bool(j, "read_only", false)
+                readOnly: bool(j, "read_only", false),
+                deliver: first(j, "deliver") ?? "local"
             )
         }
     }
@@ -542,6 +593,23 @@ final class APIClient {
 
     func cronOutput(id: String) async -> String {
         (try? String(data: try await getData("/api/crons/output?job_id=\(q(id))"), encoding: .utf8)) ?? ""
+    }
+
+    func cronHistory(id: String) async -> [CronRun] {
+        guard let o = try? await dict("/api/crons/history?job_id=\(q(id))&limit=50") else { return [] }
+        return (o["runs"] as? [[String: Any]] ?? []).compactMap { r in
+            let name = (r["filename"] as? String) ?? (r["name"] as? String) ?? ""
+            guard !name.isEmpty else { return nil }
+            return CronRun(filename: name, size: (r["size"] as? Int) ?? 0, modified: "\(r["modified"] ?? "")")
+        }
+    }
+
+    func updateCron(id: String, name: String, schedule: String, prompt: String, deliver: String) async {
+        var body: [String: Any] = ["job_id": id, "schedule": schedule]
+        if !name.isEmpty { body["name"] = name }
+        if !prompt.isEmpty { body["prompt"] = prompt }
+        if !deliver.isEmpty { body["deliver"] = deliver }
+        _ = try? await postJSON("/api/crons/update", body: body)
     }
 
     func kanban(board: String = "", assignee: String = "", tenant: String = "", includeArchived: Bool = false, onlyMine: Bool = false) async throws -> [KanbanColumn] {
@@ -926,6 +994,10 @@ final class APIClient {
         _ = try? await postJSON("/api/file/rename", body: ["session_id": sid, "path": path, "new_name": newName])
     }
 
+    func moveFile(sid: String, path: String, destDir: String) async {
+        _ = try? await postJSON("/api/file/move", body: ["session_id": sid, "path": path, "dest_dir": destDir])
+    }
+
     func retrySession(id: String) async {
         _ = try? await postJSON("/api/session/retry", body: ["session_id": id])
     }
@@ -1001,9 +1073,13 @@ final class APIClient {
         return (obj["error"] as? String) ?? (obj["message"] as? String) ?? "apply failed"
     }
 
-    func startTerminal(sid: String) async throws {
-        let o = try await dictPost("/api/terminal/start", ["session_id": sid, "rows": 24, "cols": 80])
+    func startTerminal(sid: String, rows: Int = 24, cols: Int = 80) async throws {
+        let o = try await dictPost("/api/terminal/start", ["session_id": sid, "rows": rows, "cols": cols])
         if let err = o["error"] as? String, !err.isEmpty { throw URLError(.cannotParseResponse) }
+    }
+
+    func resizeTerminal(sid: String, rows: Int, cols: Int) async {
+        _ = try? await postJSON("/api/terminal/resize", body: ["session_id": sid, "rows": rows, "cols": cols])
     }
 
     func terminalInput(sid: String, data: String) async {

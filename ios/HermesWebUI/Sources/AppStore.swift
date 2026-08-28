@@ -89,6 +89,12 @@ final class AppStore: ObservableObject {
     @Published var providers: [ProviderRow] = []
     @Published var plugins: [PluginRow] = []
     @Published var extensions: [ExtensionRow] = []
+    @Published var mcpServers: [McpServer] = []
+    @Published var searchHits: [SessionRow] = []
+    @Published var cronRuns: [CronRun] = []
+    @Published var termRows = 24
+    @Published var termCols = 80
+    @Published var shareExportURL: URL?
     var currentSid: String = ""
     var streamId: String = ""
     var afterSeq: Int64 = 0
@@ -313,6 +319,7 @@ final class AppStore: ObservableObject {
                 providers = (try? await c.providers()) ?? []
                 plugins = (try? await c.plugins()) ?? []
                 extensions = (try? await c.extensions()) ?? []
+                mcpServers = await c.mcpServers()
             }
         } catch {
             self.error = error.localizedDescription
@@ -648,6 +655,62 @@ final class AppStore: ObservableObject {
         if !url.isEmpty { UIPasteboard.general.string = url }
     }
 
+    func branchSession(_ id: String) async {
+        let newId = await client?.branchSession(id: id) ?? ""
+        await loadSessions()
+        if !newId.isEmpty { await openSid(newId) }
+    }
+
+    func importSessionJson(_ text: String) async {
+        let id = await client?.importSession(jsonText: text) ?? ""
+        await loadSessions()
+        if !id.isEmpty { await openSid(id) }
+        else { error = "Import failed" }
+    }
+
+    func onSessionQuery(_ q: String) async {
+        sessionQuery = q
+        let needle = q.trimmingCharacters(in: .whitespaces)
+        if needle.count < 2 {
+            searchHits = []
+            return
+        }
+        try? await Task.sleep(nanoseconds: 280_000_000)
+        guard sessionQuery == q else { return }
+        searchHits = await client?.searchSessions(q: needle) ?? []
+    }
+
+    func exportSession(_ format: String, id: String) async {
+        guard !id.isEmpty else { return }
+        let ext = format == "html" ? "html" : (format == "md" ? "md" : "json")
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-\(id).\(ext)")
+        do {
+            if format == "md" {
+                var md = "# \(title)\n\n"
+                for m in messages {
+                    md += "**\(m.role)**\n\n\(m.content)\n\n"
+                }
+                try md.write(to: dest, atomically: true, encoding: .utf8)
+            } else {
+                let data = try await client?.downloadExport(id: id, format: format) ?? Data()
+                try data.write(to: dest)
+            }
+            shareExportURL = dest
+            presentShare(dest)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func presentShare(_ url: URL) {
+        let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return }
+        var top = root
+        while let presented = top.presentedViewController { top = presented }
+        top.present(av, animated: true)
+    }
+
     func createProject(_ name: String) async {
         await client?.createProject(name: name)
         await loadSessions()
@@ -755,6 +818,12 @@ final class AppStore: ObservableObject {
         await loadFiles(fsPath)
     }
 
+    func moveFs(_ entry: FsEntry, _ destDir: String) async {
+        guard let c = client, !destDir.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        await c.moveFile(sid: currentSid, path: entry.path, destDir: destDir.trimmingCharacters(in: .whitespaces))
+        await loadFiles(fsPath)
+    }
+
     func loadCommands() async {
         commands = await client?.commands().filter { !$0.cliOnly } ?? []
     }
@@ -855,7 +924,7 @@ final class AppStore: ObservableObject {
             return
         }
         do {
-            try await c.startTerminal(sid: currentSid)
+            try await c.startTerminal(sid: currentSid, rows: termRows, cols: termCols)
             termRunning = true
             termTask?.cancel()
             termTask = Task { [weak self] in
@@ -877,6 +946,11 @@ final class AppStore: ObservableObject {
         termTask?.cancel()
         await client?.closeTerminal(sid: currentSid)
         termRunning = false
+    }
+
+    func resizeTerm() async {
+        guard !currentSid.isEmpty else { return }
+        await client?.resizeTerminal(sid: currentSid, rows: termRows, cols: termCols)
     }
 
     private func onTerm(_ ev: String, _ data: String) {
@@ -968,7 +1042,15 @@ final class AppStore: ObservableObject {
         await loadPanel()
     }
 
-    func loadJobOutput(_ id: String) async { jobOutput = await client?.cronOutput(id: id) ?? "" }
+    func loadJobOutput(_ id: String) async {
+        jobOutput = await client?.cronOutput(id: id) ?? ""
+        cronRuns = await client?.cronHistory(id: id) ?? []
+    }
+
+    func updateCron(id: String, name: String, schedule: String, prompt: String, deliver: String) async {
+        await client?.updateCron(id: id, name: name, schedule: schedule, prompt: prompt, deliver: deliver)
+        await loadPanel()
+    }
 
     func loadKanban() async {
         guard let c = client else { return }

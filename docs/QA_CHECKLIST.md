@@ -44,8 +44,11 @@ the migration row.
   Terminal stay off the rail (composer chips). Kanban on iOS has the same
   board switcher / search / assignee filters / add / complete / archive as
   Android — not tap-to-advance columns.
-- [ ] **Conversations** — WebUI/CLI tabs, project chips, pin/archive/rename/duplicate/share/move/delete, retry/undo/regenerate title from the overflow/context menu.
-- [ ] **Files** — create file/folder, rename, delete, save.
+- [ ] **Conversations** — WebUI/CLI tabs, project chips, pin/archive/rename/duplicate/share/export JSON+HTML+Markdown/branch/move/delete, retry/undo/regenerate title. Import JSON. Filter hits `/api/sessions/search`.
+- [ ] **Files** — create file/folder, rename, move, delete, save.
+- [ ] **Tasks** — Edit (name/schedule/prompt/deliver) + Output history from `/api/crons/history`.
+- [ ] **Terminal** — rows/cols + Resize (`POST /api/terminal/resize`).
+- [ ] **Settings → Plugins** — MCP servers list (`GET /api/mcp/servers`).
 - [ ] **Slash commands** — typing `/` lists matching WebUI commands; send runs `/api/commands/exec` (retry/undo/yolo/title/new have dedicated handlers). YOLO chip in composer.
 - [ ] **Settings → System** — Sign out, Updates check/apply (WebUI + agent behind counts).
 - [ ] **Session counts** — iOS drawer and Recent conversations show real

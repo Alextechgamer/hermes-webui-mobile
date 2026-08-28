@@ -108,6 +108,12 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val providers = mutableStateListOf<ProviderRow>()
     val plugins = mutableStateListOf<PluginRow>()
     val extensions = mutableStateListOf<ExtensionRow>()
+    val mcpServers = mutableStateListOf<McpServer>()
+    val searchHits = mutableStateListOf<SessionRow>()
+    val cronRuns = mutableStateListOf<CronRun>()
+    val termRows = mutableStateOf(24)
+    val termCols = mutableStateOf(80)
+    val pendingShare = mutableStateOf<android.net.Uri?>(null)
     var sid = ""
         private set
     private var streamId = ""
@@ -120,6 +126,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var termEs: EventSource? = null
     private var poll: Job? = null
     private var reconnect: Job? = null
+    private var searchJob: Job? = null
     private var player: android.media.MediaPlayer? = null
     private var recorder: android.media.MediaRecorder? = null
     private var recFile: java.io.File? = null
@@ -298,6 +305,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         plugins.clear(); plugins.addAll(plug)
                         val ext = withContext(Dispatchers.IO) { runCatching { c.extensions() }.getOrDefault(emptyList()) }
                         extensions.clear(); extensions.addAll(ext)
+                        val mcp = withContext(Dispatchers.IO) { runCatching { c.mcpServers() }.getOrDefault(emptyList()) }
+                        mcpServers.clear(); mcpServers.addAll(mcp)
                     }
                 }
             } catch (e: AuthException) {
@@ -532,6 +541,78 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { runCatching { c.deleteProject(id) } }
             if (activeProjectId.value == id) activeProjectId.value = ""
             refreshSessions()
+        }
+    }
+
+    fun branchSession(sid: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val newId = withContext(Dispatchers.IO) { runCatching { c.branchSession(sid) }.getOrDefault("") }
+            refreshSessions()
+            if (newId.isNotBlank()) open(newId)
+        }
+    }
+
+    fun importSessionJson(text: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                val id = withContext(Dispatchers.IO) { c.importSession(text) }
+                refreshSessions()
+                if (id.isNotBlank()) open(id)
+            } catch (e: Exception) { error.value = e.message ?: "Import failed" }
+        }
+    }
+
+    fun onSessionQuery(q: String) {
+        sessionQuery.value = q
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(280)
+            val needle = q.trim()
+            if (needle.length < 2) {
+                searchHits.clear()
+                return@launch
+            }
+            val c = api ?: return@launch
+            val hits = withContext(Dispatchers.IO) { runCatching { c.searchSessions(needle) }.getOrDefault(emptyList()) }
+            searchHits.clear(); searchHits.addAll(hits)
+        }
+    }
+
+    fun exportSession(format: String, sid: String = this.sid) {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val ext = when (format) {
+                    "html" -> "html"
+                    "md" -> "md"
+                    else -> "json"
+                }
+                val dest = java.io.File(getApplication<Application>().cacheDir, "hermes-$sid.$ext")
+                withContext(Dispatchers.IO) {
+                    dest.parentFile?.mkdirs()
+                    if (format == "md") {
+                        val md = buildString {
+                            append("# ${title.value}\n\n")
+                            bubbles.forEach { m ->
+                                append("**${m.role}**\n\n")
+                                append(m.content)
+                                append("\n\n")
+                            }
+                        }
+                        dest.writeText(md)
+                    } else {
+                        c.downloadExport(sid, format, dest)
+                    }
+                }
+                pendingShare.value = androidx.core.content.FileProvider.getUriForFile(
+                    getApplication(),
+                    "com.hermes.webui.fileprovider",
+                    dest,
+                )
+            } catch (e: Exception) { error.value = e.message }
         }
     }
 
@@ -854,6 +935,18 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         viewModelScope.launch {
             jobOutput.value = withContext(Dispatchers.IO) { c.cronOutput(id) }
+            val runs = withContext(Dispatchers.IO) { runCatching { c.cronHistory(id) }.getOrDefault(emptyList()) }
+            cronRuns.clear(); cronRuns.addAll(runs)
+        }
+    }
+
+    fun updateCron(id: String, name: String, schedule: String, prompt: String, deliver: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.updateCron(id, name, schedule, prompt, deliver) }
+                loadPanel(Panel.Tasks)
+            } catch (e: Exception) { error.value = e.message }
         }
     }
 
@@ -1381,6 +1474,17 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun moveFs(entry: FsEntry, destDir: String) {
+        val c = api ?: return
+        if (destDir.isBlank()) return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.moveFile(sid, entry.path, destDir.trim()) }
+                loadFiles(fsPath.value)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
     fun startTerm() {
         val c = api ?: return
         viewModelScope.launch {
@@ -1389,7 +1493,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             try {
-                withContext(Dispatchers.IO) { c.startTerminal(sid) }
+                withContext(Dispatchers.IO) { c.startTerminal(sid, termRows.value, termCols.value) }
                 termRunning.value = true
                 termEs?.cancel()
                 termEs = c.streamTerminal(sid, { ev, data -> onTerm(ev, data) }, {
@@ -1413,6 +1517,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { c.closeTerminal(sid) }
             termRunning.value = false
+        }
+    }
+
+    fun resizeTerm() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.resizeTerminal(sid, termRows.value, termCols.value) } }
         }
     }
 

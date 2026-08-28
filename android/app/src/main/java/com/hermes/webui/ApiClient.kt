@@ -237,6 +237,44 @@ class ApiClient(base: String, prefs: Prefs) {
         postRaw("/api/share/revoke", """{"session_id":${q(sid)}}""")
     }
 
+    fun branchSession(sid: String, title: String = ""): String {
+        val body = if (title.isBlank()) """{"session_id":${q(sid)}}""" else """{"session_id":${q(sid)},"title":${q(title)}}"""
+        val el = json.parseToJsonElement(postRaw("/api/session/branch", body)).asObj()
+        return el.str("session_id").ifBlank { el.obj("session")?.str("session_id").orEmpty() }
+    }
+
+    fun importSession(jsonBody: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/session/import", jsonBody)).asObj()
+        return el.obj("session")?.str("session_id").orEmpty().ifBlank { el.str("session_id") }
+    }
+
+    fun searchSessions(q: String): List<SessionRow> {
+        if (q.isBlank()) return emptyList()
+        val el = runCatching { parse("/api/sessions/search?q=${enc(q)}").asObj() }.getOrNull() ?: return emptyList()
+        val arr = el.arrayOf("sessions", "data", "items")
+        return arr.mapNotNull { it.asObjOrNull()?.toSession() }
+    }
+
+    fun downloadExport(sid: String, format: String, dest: java.io.File): java.io.File {
+        val qs = if (format == "html") "?session_id=${enc(sid)}&format=html" else "?session_id=${enc(sid)}"
+        http.newCall(req("GET", "/api/session/export$qs")).execute().use { resp ->
+            if (resp.code == 401) throw AuthException()
+            if (!resp.isSuccessful) throw RuntimeException("HTTP ${resp.code}")
+            dest.outputStream().use { out -> resp.body?.byteStream()?.copyTo(out) }
+        }
+        return dest
+    }
+
+    fun mcpServers(): List<McpServer> {
+        val o = runCatching { parse("/api/mcp/servers").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("servers") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val s = el.asObjOrNull() ?: return@mapNotNull null
+            val name = s.str("name", "id")
+            if (name.isBlank()) return@mapNotNull null
+            McpServer(name, s.bool("enabled", true) && !s.bool("disabled"), s.str("description", "status").take(240))
+        }
+    }
+
     fun projects(): List<ProjectRow> {
         val o = runCatching { parse("/api/projects").asObj() }.getOrNull() ?: return emptyList()
         return (o.arr("projects") ?: JsonArray(emptyList())).mapNotNull { el ->
@@ -470,6 +508,7 @@ class ApiClient(base: String, prefs: Prefs) {
                 nextRun = j.anyToString("next_run_at", "next_run"),
                 owner = j.str("owner_profile", "profile"),
                 readOnly = j.bool("read_only"),
+                deliver = j.str("deliver").ifBlank { "local" },
             )
         }.filter { it.id.isNotBlank() }
     }
@@ -490,6 +529,24 @@ class ApiClient(base: String, prefs: Prefs) {
 
     fun cronOutput(jobId: String): String {
         return runCatching { getRaw("/api/crons/output?job_id=${enc(jobId)}").take(12000) }.getOrDefault("")
+    }
+
+    fun cronHistory(jobId: String): List<CronRun> {
+        val o = runCatching { parse("/api/crons/history?job_id=${enc(jobId)}&limit=50").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("runs") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val r = el.asObjOrNull() ?: return@mapNotNull null
+            val name = r.str("filename", "name")
+            if (name.isBlank()) return@mapNotNull null
+            CronRun(name, r.int("size"), r.anyToString("modified"))
+        }
+    }
+
+    fun updateCron(jobId: String, name: String, schedule: String, prompt: String, deliver: String) {
+        val parts = mutableListOf("\"job_id\":${q(jobId)}", "\"schedule\":${q(schedule)}")
+        if (name.isNotBlank()) parts += "\"name\":${q(name)}"
+        if (prompt.isNotBlank()) parts += "\"prompt\":${q(prompt)}"
+        if (deliver.isNotBlank()) parts += "\"deliver\":${q(deliver)}"
+        postRaw("/api/crons/update", "{" + parts.joinToString(",") + "}")
     }
 
     fun kanban(
@@ -946,6 +1003,10 @@ class ApiClient(base: String, prefs: Prefs) {
         postRaw("/api/file/rename", """{"session_id":${q(sid)},"path":${q(path)},"new_name":${q(newName)}}""")
     }
 
+    fun moveFile(sid: String, path: String, destDir: String) {
+        postRaw("/api/file/move", """{"session_id":${q(sid)},"path":${q(path)},"dest_dir":${q(destDir)}}""")
+    }
+
     fun retrySession(sid: String) {
         postRaw("/api/session/retry", """{"session_id":${q(sid)}}""")
     }
@@ -1028,6 +1089,10 @@ class ApiClient(base: String, prefs: Prefs) {
 
     fun closeTerminal(sid: String) {
         runCatching { postRaw("/api/terminal/close", """{"session_id":${q(sid)}}""") }
+    }
+
+    fun resizeTerminal(sid: String, rows: Int, cols: Int) {
+        postRaw("/api/terminal/resize", """{"session_id":${q(sid)},"rows":$rows,"cols":$cols}""")
     }
 
     fun streamTerminal(sid: String, onEvent: (String, String) -> Unit, onClosed: () -> Unit): EventSource {

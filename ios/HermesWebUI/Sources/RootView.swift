@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RootView: View {
     @EnvironmentObject var settings: AppSettings
@@ -272,6 +273,7 @@ struct RootView: View {
 struct DrawerBody: View {
     @ObservedObject var store: AppStore
     @Binding var show: Bool
+    @State private var importing = false
     @State private var newProject = ""
     @AppStorage("chatsExpanded") private var chatsExpanded = false
 
@@ -365,6 +367,9 @@ struct DrawerBody: View {
                     TextField("Filter conversations…", text: $store.sessionQuery)
                         .foregroundColor(Palette.text)
                         .font(.system(size: 13))
+                        .onChange(of: store.sessionQuery) { q in
+                            Task { await store.onSessionQuery(q) }
+                        }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -372,6 +377,9 @@ struct DrawerBody: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border, lineWidth: 1))
                 .cornerRadius(12)
                 .padding(.vertical, 6)
+
+                Button("Import JSON") { importing = true }
+                    .font(.caption).foregroundColor(Palette.accent)
 
                 HStack(spacing: 6) {
                     sourceChip("WebUI" + (store.webuiSessionCount > 0 ? " (\(store.webuiSessionCount))" : ""), store.sessionSource.isEmpty) {
@@ -451,6 +459,10 @@ struct DrawerBody: View {
                         Button(row.archived ? "Unarchive" : "Archive") { Task { await store.archiveSession(row) } }
                         Button("Duplicate") { Task { await store.duplicateSession(row.sid) } }
                         Button("Share link") { Task { await store.shareSession(row.sid) } }
+                        Button("Export JSON") { Task { await store.exportSession("json", id: row.sid) } }
+                        Button("Export HTML") { Task { await store.exportSession("html", id: row.sid) } }
+                        Button("Export Markdown") { Task { await store.exportSession("md", id: row.sid) } }
+                        Button("Branch") { Task { await store.branchSession(row.sid) } }
                         Button("Clear messages") { Task { await store.clearSession(row.sid) } }
                         Button("Retry last") { Task { await store.retryLast() } }
                         Button("Undo last") { Task { await store.undoLast() } }
@@ -469,15 +481,25 @@ struct DrawerBody: View {
         .padding(.leading, 18)
         .padding(.trailing, 8)
         .padding(.bottom, 8)
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .text]) { result in
+            guard case .success(let url) = result else { return }
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            if let text = try? String(contentsOf: url, encoding: .utf8) {
+                Task { await store.importSessionJson(text) }
+            }
+        }
     }
 
     private var filtered: [SessionRow] {
         let q = store.sessionQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        return store.sessions.filter {
+        let local = store.sessions.filter {
             let qOk = q.isEmpty || $0.displayTitle.lowercased().contains(q) || ($0.preview ?? "").lowercased().contains(q)
             let pOk = store.activeProjectId.isEmpty || $0.projectId == store.activeProjectId
             return qOk && pOk
-        }.sorted { a, b in
+        }
+        let extra = store.searchHits.filter { hit in !local.contains(where: { $0.sid == hit.sid }) }
+        return (local + extra).sorted { a, b in
             if (a.pinned == true) != (b.pinned == true) { return a.pinned == true }
             return a.msgCount > b.msgCount
         }

@@ -235,6 +235,26 @@ struct PluginsSettings: View {
                     .background(Palette.surface)
                     .cornerRadius(12)
                 }
+                Text("MCP servers").font(.system(size: 16, weight: .semibold)).foregroundColor(Palette.text).padding(.top, 8)
+                Text("Same /api/mcp/servers list as desktop.")
+                    .font(.system(size: 12)).foregroundColor(Palette.muted)
+                if store.mcpServers.isEmpty { Text("No MCP servers.").foregroundColor(Palette.muted) }
+                ForEach(store.mcpServers) { s in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(s.name).fontWeight(.semibold).foregroundColor(Palette.text)
+                            Spacer()
+                            Text(s.enabled ? "on" : "off").font(.caption).foregroundColor(s.enabled ? Palette.ok : Palette.muted)
+                        }
+                        if !s.description.isEmpty {
+                            Text(s.description).font(.system(size: 12)).foregroundColor(Palette.muted)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface)
+                    .cornerRadius(12)
+                }
             }
             .padding(16)
         }

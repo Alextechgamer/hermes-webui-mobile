@@ -44,10 +44,15 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun TasksPane(vm: AppVm) {
     var openId by remember { mutableStateOf<String?>(null) }
+    var editId by remember { mutableStateOf<String?>(null) }
     var showNew by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newSchedule by remember { mutableStateOf("") }
     var newPrompt by remember { mutableStateOf("") }
+    var editName by remember { mutableStateOf("") }
+    var editSchedule by remember { mutableStateOf("") }
+    var editPrompt by remember { mutableStateOf("") }
+    var editDeliver by remember { mutableStateOf("local") }
     Column(Modifier.fillMaxSize().background(Wui.Bg)) {
         ErrLine(vm)
         Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -109,11 +114,41 @@ fun TasksPane(vm: AppVm) {
                                 openId = if (openId == job.id) null else job.id
                                 vm.loadJobOutput(job.id)
                             })
+                            Text("Edit", color = Wui.Muted, modifier = Modifier.clickable {
+                                editId = if (editId == job.id) null else job.id
+                                editName = job.name
+                                editSchedule = job.schedule
+                                editPrompt = job.prompt
+                                editDeliver = job.deliver
+                            })
                             Text("Delete", color = Wui.Danger, modifier = Modifier.clickable { vm.deleteCron(job.id) })
                         }
                     }
-                    if (openId == job.id && vm.jobOutput.value.isNotBlank()) {
-                        Text(vm.jobOutput.value.take(4000), color = Wui.Text, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    if (editId == job.id) {
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp).background(Wui.Surface, RoundedCornerShape(10.dp)).padding(10.dp)) {
+                            OutlinedTextField(editName, { editName = it }, label = { Text("Name") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            OutlinedTextField(editSchedule, { editSchedule = it }, label = { Text("Schedule") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            OutlinedTextField(editPrompt, { editPrompt = it }, label = { Text("Prompt") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(editDeliver, { editDeliver = it }, label = { Text("Deliver (local, origin, …)") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            TextButton(onClick = {
+                                vm.updateCron(job.id, editName.trim(), editSchedule.trim(), editPrompt.trim(), editDeliver.trim())
+                                editId = null
+                            }) { Text("Save job", color = Wui.Accent) }
+                        }
+                    }
+                    if (openId == job.id) {
+                        if (vm.cronRuns.isNotEmpty()) {
+                            Text("History", color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                            vm.cronRuns.take(12).forEach { run ->
+                                Text(
+                                    "${run.filename} · ${run.size} · ${if (run.modified.isNotBlank()) JsonText.ts(run.modified) else ""}",
+                                    color = Wui.Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                                )
+                            }
+                        }
+                        if (vm.jobOutput.value.isNotBlank()) {
+                            Text(vm.jobOutput.value.take(4000), color = Wui.Text, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                        }
                     }
                 }
                 HorizontalDivider(color = Wui.Border)

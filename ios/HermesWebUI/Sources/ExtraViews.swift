@@ -6,6 +6,8 @@ struct FilesPane: View {
     @State private var makingDir = false
     @State private var renameTarget: FsEntry?
     @State private var renameDraft = ""
+    @State private var moveTarget: FsEntry?
+    @State private var moveDraft = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Workspace files for this chat — /api/list + /api/file")
@@ -63,6 +65,7 @@ struct FilesPane: View {
                         .listRowBackground(Palette.surface)
                         .contextMenu {
                             Button("Rename") { renameTarget = e; renameDraft = e.name }
+                            Button("Move") { moveTarget = e; moveDraft = store.fsPath }
                             Button("Delete", role: .destructive) { Task { await store.deleteFs(e) } }
                         }
                     }
@@ -76,6 +79,14 @@ struct FilesPane: View {
                 renameTarget = nil
             }
             Button("Cancel", role: .cancel) { renameTarget = nil }
+        }
+        .alert("Move to folder", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
+            TextField("Destination", text: $moveDraft)
+            Button("Move") {
+                if let e = moveTarget { Task { await store.moveFs(e, moveDraft) } }
+                moveTarget = nil
+            }
+            Button("Cancel", role: .cancel) { moveTarget = nil }
         }
     }
 }
@@ -94,7 +105,14 @@ struct TerminalPane: View {
                     Button("Start") { Task { await store.startTerm() } }.foregroundColor(Palette.accent)
                 }
                 Text(store.termRunning ? "running" : "stopped").foregroundColor(Palette.muted)
+                Button("Resize") { Task { await store.resizeTerm() } }.foregroundColor(Palette.accent)
                 Spacer()
+            }.padding(.horizontal, 12)
+            HStack {
+                TextField("rows", value: $store.termRows, format: .number)
+                    .foregroundColor(Palette.text).padding(8).background(Palette.surface).cornerRadius(8)
+                TextField("cols", value: $store.termCols, format: .number)
+                    .foregroundColor(Palette.text).padding(8).background(Palette.surface).cornerRadius(8)
             }.padding(.horizontal, 12)
             ScrollView {
                 Text(store.termText.isEmpty ? "Start a shell, then type a command below." : store.termText)

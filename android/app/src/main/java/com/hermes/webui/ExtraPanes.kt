@@ -35,6 +35,8 @@ fun FilesPane(vm: AppVm) {
     var menuPath by remember { mutableStateOf<String?>(null) }
     var renamePath by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
+    var movePath by remember { mutableStateOf<String?>(null) }
+    var moveDraft by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         ErrLine(vm)
         SectionLabel("Workspace files for this chat session — same /api/list + /api/file as desktop")
@@ -103,7 +105,17 @@ fun FilesPane(vm: AppVm) {
                         if (menuPath == e.path) {
                             Row(Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("Rename", color = Wui.Accent, modifier = Modifier.clickable { renamePath = e.path; renameDraft = e.name; menuPath = null })
+                                Text("Move", color = Wui.Accent, modifier = Modifier.clickable { movePath = e.path; moveDraft = vm.fsPath.value; menuPath = null })
                                 Text("Delete", color = Wui.Danger, modifier = Modifier.clickable { vm.deleteFs(e); menuPath = null })
+                            }
+                        }
+                        if (movePath == e.path) {
+                            Row(Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(moveDraft, { moveDraft = it }, colors = fieldColors(), singleLine = true, modifier = Modifier.weight(1f), placeholder = { Text("dest folder", color = Wui.Muted) })
+                                Text("Go", color = Wui.Accent, modifier = Modifier.clickable {
+                                    if (moveDraft.isNotBlank()) vm.moveFs(e, moveDraft)
+                                    movePath = null
+                                }.padding(8.dp))
                             }
                         }
                     }
@@ -126,6 +138,19 @@ fun TerminalPane(vm: AppVm) {
                 Text("Start", color = Wui.Accent, modifier = Modifier.clickable { vm.startTerm() }.padding(8.dp))
             }
             Text(if (vm.termRunning.value) "running" else "stopped", color = Wui.Muted, modifier = Modifier.padding(8.dp))
+            Text("Resize", color = Wui.Accent, modifier = Modifier.clickable { vm.resizeTerm() }.padding(8.dp))
+        }
+        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                vm.termRows.value.toString(),
+                { vm.termRows.value = it.toIntOrNull()?.coerceIn(8, 80) ?: vm.termRows.value },
+                label = { Text("rows") }, colors = fieldColors(), singleLine = true, modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                vm.termCols.value.toString(),
+                { vm.termCols.value = it.toIntOrNull()?.coerceIn(20, 200) ?: vm.termCols.value },
+                label = { Text("cols") }, colors = fieldColors(), singleLine = true, modifier = Modifier.weight(1f),
+            )
         }
         Text(
             vm.termText.value.ifBlank { "Start a shell, then type a command below." },

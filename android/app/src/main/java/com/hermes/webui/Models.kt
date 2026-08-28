@@ -152,6 +152,19 @@ data class CronJob(
     val nextRun: String = "",
     val owner: String,
     val readOnly: Boolean,
+    val deliver: String = "local",
+)
+
+data class CronRun(
+    val filename: String,
+    val size: Int = 0,
+    val modified: String = "",
+)
+
+data class McpServer(
+    val name: String,
+    val enabled: Boolean = true,
+    val description: String = "",
 )
 
 data class KanbanColumn(

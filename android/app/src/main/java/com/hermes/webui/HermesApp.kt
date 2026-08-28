@@ -3,6 +3,11 @@
 package com.hermes.webui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -301,7 +306,7 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             BasicTextField(
                 value = vm.sessionQuery.value,
-                onValueChange = { vm.sessionQuery.value = it },
+                onValueChange = { vm.onSessionQuery(it) },
                 singleLine = true,
                 textStyle = TextStyle(color = Wui.Text, fontSize = 13.sp),
                 cursorBrush = SolidColor(Wui.Accent),
@@ -312,6 +317,24 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
                 },
             )
         }
+        val ctx = LocalContext.current
+        LaunchedEffect(vm.pendingShare.value) {
+            val uri = vm.pendingShare.value ?: return@LaunchedEffect
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            ctx.startActivity(Intent.createChooser(intent, "Export session"))
+            vm.pendingShare.value = null
+        }
+        val importPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            runCatching {
+                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()?.let { vm.importSessionJson(it) }
+        }
+        Text("Import JSON", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp).clickable { importPick.launch(arrayOf("application/json", "text/*")) })
         val q = vm.sessionQuery.value.trim().lowercase()
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val webLabel = "WebUI" + (vm.webuiSessionCount.value.takeIf { it > 0 }?.let { " ($it)" } ?: "")
@@ -381,11 +404,13 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
         vm.shareNotice.value?.let { notice ->
             Text(notice, color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(8.dp).clickable { vm.shareNotice.value = null })
         }
-        val shown = vm.sessions.filter {
+        val local = vm.sessions.filter {
             val qOk = q.isEmpty() || it.displayTitle.lowercase().contains(q) || it.preview.lowercase().contains(q)
             val pOk = vm.activeProjectId.value.isEmpty() || it.projectId == vm.activeProjectId.value
             qOk && pOk
-        }.sortedWith(compareByDescending<SessionRow> { it.pinned }.thenByDescending { it.msgCount })
+        }
+        val shown = (local + vm.searchHits.filter { hit -> local.none { it.sid == hit.sid } })
+            .sortedWith(compareByDescending<SessionRow> { it.pinned }.thenByDescending { it.msgCount })
         if (shown.isEmpty()) {
             Text("No conversations yet.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp, 6.dp))
         }
@@ -451,6 +476,10 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
                             "Rename" to { renameSid = row.sid; renameDraft = row.title },
                             "Duplicate" to { vm.duplicateSession(row.sid) },
                             "Share link" to { vm.shareSession(row.sid) },
+                            "Export JSON" to { vm.exportSession("json", row.sid) },
+                            "Export HTML" to { vm.exportSession("html", row.sid) },
+                            "Export Markdown" to { vm.exportSession("md", row.sid) },
+                            "Branch" to { vm.branchSession(row.sid) },
                             "Clear messages" to { vm.clearSession(row.sid) },
                             "Retry last" to { vm.retryLast() },
                             "Undo last" to { vm.undoLast() },
