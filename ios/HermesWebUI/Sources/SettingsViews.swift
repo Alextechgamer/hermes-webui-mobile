@@ -190,9 +190,17 @@ struct ProvidersSettings: View {
                                     Button("Cancel") { editing = nil; key = "" }.foregroundColor(Palette.muted)
                                 }
                             } else {
-                                Button("Set key") { editing = p.id; key = "" }
-                                    .font(.system(size: 13))
-                                    .foregroundColor(Palette.accent)
+                                HStack(spacing: 14) {
+                                    Button("Set key") { editing = p.id; key = "" }
+                                        .foregroundColor(Palette.accent)
+                                    Button("Refresh models") { Task { await store.refreshProviderModels(p.id) } }
+                                        .foregroundColor(Palette.muted)
+                                    if p.hasKey {
+                                        Button("Remove key") { Task { await store.removeProviderKey(p.id) } }
+                                            .foregroundColor(Palette.danger)
+                                    }
+                                }
+                                .font(.system(size: 13))
                             }
                         }
                     }
@@ -207,6 +215,21 @@ struct ProvidersSettings: View {
                 if !store.settingEdits.isEmpty {
                     Button("Save setting changes") { Task { await store.saveSettings() } }
                         .foregroundColor(Palette.accent)
+                }
+                Text("Auxiliary models").font(.system(size: 16, weight: .semibold)).foregroundColor(Palette.text).padding(.top, 8)
+                Text("Per-task helpers (vision, web extract, compression…).")
+                    .font(.system(size: 12)).foregroundColor(Palette.muted)
+                if store.auxModels.isEmpty { Text("No auxiliary tasks reported.").foregroundColor(Palette.muted) }
+                ForEach(store.auxModels) { a in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(a.label).fontWeight(.semibold).foregroundColor(Palette.text)
+                        Text((a.description.isEmpty ? "" : a.description + " · ") + (a.model.isEmpty ? "auto" : "\(a.provider.isEmpty ? "auto" : a.provider) / \(a.model)"))
+                            .font(.system(size: 12)).foregroundColor(Palette.muted)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface)
+                    .cornerRadius(12)
                 }
             }
             .padding(16)
@@ -275,15 +298,45 @@ struct ExtensionsSettings: View {
                         HStack {
                             Text(e.name).fontWeight(.semibold).foregroundColor(Palette.text)
                             Spacer()
-                            Text(e.enabled ? "on" : "off")
-                                .font(.system(size: 12))
-                                .foregroundColor(e.enabled ? Palette.ok : Palette.muted)
+                            Button(e.enabled ? "Disable" : "Enable") { Task { await store.toggleExtension(e.id, !e.enabled) } }
+                                .font(.caption).foregroundColor(Palette.accent)
+                            Button("Uninstall") { Task { await store.uninstallExtension(e.id) } }
+                                .font(.caption).foregroundColor(Palette.danger)
                         }
                         if !e.description.isEmpty {
                             Text(e.description).font(.system(size: 12)).foregroundColor(Palette.muted)
                         }
                     }
                     .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface)
+                    .cornerRadius(12)
+                }
+                Text("Gallery").font(.system(size: 16, weight: .semibold)).foregroundColor(Palette.text).padding(.top, 8)
+                Text("Registry from /api/extensions/registry.")
+                    .font(.system(size: 12)).foregroundColor(Palette.muted)
+                if store.registry.isEmpty { Text("Registry unavailable.").foregroundColor(Palette.muted) }
+                ForEach(store.registry) { r in
+                    let installed = store.extensions.contains { $0.id == r.id }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(r.name).fontWeight(.semibold).foregroundColor(Palette.text)
+                            Spacer()
+                            if installed {
+                                Text("installed").font(.caption).foregroundColor(Palette.ok)
+                            } else {
+                                Button("Install") { Task { await store.installExtension(r) } }
+                                    .font(.caption).foregroundColor(Palette.accent)
+                            }
+                        }
+                        Text([r.version.isEmpty ? nil : "v\(r.version)", r.author.isEmpty ? nil : r.author].compactMap { $0 }.joined(separator: " · "))
+                            .font(.system(size: 11)).foregroundColor(Palette.muted)
+                        if !r.description.isEmpty {
+                            Text(r.description).font(.system(size: 12)).foregroundColor(Palette.muted)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.surface)
                     .cornerRadius(12)
                 }
@@ -302,6 +355,17 @@ struct SystemSettings: View {
                 Text("Instance access and Hermes Console.")
                     .font(.system(size: 12)).foregroundColor(Palette.muted)
                     .padding(.bottom, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Health").fontWeight(.semibold).foregroundColor(Palette.text)
+                    Text("server \(store.health.status.isEmpty ? "?" : store.health.status) · cpu \(Int(store.health.cpuPct))% · mem \(Int(store.health.memPct))% · disk \(Int(store.health.diskPct))%")
+                        .font(.system(size: 12)).foregroundColor(Palette.muted)
+                    Text("agent \(store.health.agentAlive ? "alive" : "down") · gateway \(store.health.gatewayRunning ? "running" : "stopped") · \(store.health.residentSessions) sessions · \(store.health.activeStreams) live")
+                        .font(.system(size: 12)).foregroundColor(Palette.muted)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.surface)
+                .cornerRadius(12)
                 Button { Task { await store.signOut() } } label: {
                     HStack {
                         VStack(alignment: .leading) {

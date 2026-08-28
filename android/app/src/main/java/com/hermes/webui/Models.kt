@@ -167,6 +167,41 @@ data class McpServer(
     val description: String = "",
 )
 
+data class PersonalityRow(
+    val name: String,
+    val description: String = "",
+)
+
+data class AuxModelRow(
+    val task: String,
+    val label: String,
+    val provider: String = "",
+    val model: String = "",
+    val description: String = "",
+)
+
+data class RegistryEntry(
+    val id: String,
+    val name: String,
+    val description: String = "",
+    val version: String = "",
+    val author: String = "",
+    val downloadUrl: String = "",
+    val sha256: String = "",
+    val installed: Boolean = false,
+)
+
+data class HealthInfo(
+    val status: String = "",
+    val cpuPct: Double = 0.0,
+    val memPct: Double = 0.0,
+    val diskPct: Double = 0.0,
+    val agentAlive: Boolean = false,
+    val gatewayRunning: Boolean = false,
+    val residentSessions: Int = 0,
+    val activeStreams: Int = 0,
+)
+
 data class KanbanColumn(
     val name: String,
     val tasks: List<KanbanTask>,

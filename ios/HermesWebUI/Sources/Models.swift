@@ -100,6 +100,42 @@ struct McpServer: Identifiable {
     var description: String = ""
 }
 
+struct PersonalityRow: Identifiable {
+    var id: String { name }
+    var name: String
+    var description: String = ""
+}
+
+struct AuxModelRow: Identifiable {
+    var id: String { task }
+    var task: String
+    var label: String
+    var provider: String = ""
+    var model: String = ""
+    var description: String = ""
+}
+
+struct RegistryEntry: Identifiable {
+    var id: String
+    var name: String
+    var description: String = ""
+    var version: String = ""
+    var author: String = ""
+    var downloadUrl: String = ""
+    var sha256: String = ""
+}
+
+struct HealthInfo {
+    var status: String = ""
+    var cpuPct: Double = 0
+    var memPct: Double = 0
+    var diskPct: Double = 0
+    var agentAlive: Bool = false
+    var gatewayRunning: Bool = false
+    var residentSessions: Int = 0
+    var activeStreams: Int = 0
+}
+
 struct KanbanColumn: Identifiable {
     var id: String { name }
     var name: String

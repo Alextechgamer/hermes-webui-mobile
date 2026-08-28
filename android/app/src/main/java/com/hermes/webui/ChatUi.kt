@@ -402,6 +402,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
     var showProfiles by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
     var showReasoning by remember { mutableStateOf(false) }
+    var showPersonalities by remember { mutableStateOf(false) }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.attachUris(ctx, uris)
     }
@@ -429,7 +430,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
             }
         }
         if (showModels && vm.models.isNotEmpty()) {
-            ModelPicker(vm.models, vm.selectedModel.value) { m ->
+            ModelPicker(vm.models, vm.selectedModel.value, onDefault = { vm.setDefaultModel(it) }) { m ->
                 vm.pickModel(m)
                 showModels = false
             }
@@ -438,6 +439,14 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
             ChipMenu(vm.reasoning.value.options().map { it.second to it.first }) { effort ->
                 vm.setReasoning(effort)
                 showReasoning = false
+            }
+        }
+        if (showPersonalities && vm.personalities.isNotEmpty()) {
+            ChipMenu(
+                listOf("Default" to "") + vm.personalities.map { it.name to it.name },
+            ) { name ->
+                vm.setPersonality(name)
+                showPersonalities = false
             }
         }
         val slashHits = vm.matchingCommands(draft)
@@ -523,6 +532,15 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                     showProfiles = false
                 }
                 FooterChip(Icons.Outlined.Build, if (vm.yoloEnabled.value) "YOLO on" else "YOLO") { vm.toggleYolo() }
+                FooterChip(
+                    Icons.Outlined.Lightbulb,
+                    vm.activePersonality.value.ifBlank { "Persona" },
+                ) {
+                    if (vm.personalities.isEmpty()) vm.loadPersonalities()
+                    showPersonalities = !showPersonalities
+                    showModels = false; showPrompts = false; showProfiles = false; showReasoning = false
+                }
+                FooterChip(Icons.Outlined.Build, if (vm.compressing.value) "Compressing…" else "Compress") { vm.compressSession() }
                 Spacer(Modifier.width(8.dp))
                 if (vm.busy.value) {
                     Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
@@ -549,7 +567,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
 }
 
 @Composable
-private fun ModelPicker(options: List<ModelOption>, selected: String, onPick: (String) -> Unit) {
+private fun ModelPicker(options: List<ModelOption>, selected: String, onDefault: ((ModelOption) -> Unit)? = null, onPick: (String) -> Unit) {
     var q by remember { mutableStateOf("") }
     val needle = q.trim().lowercase()
     val filtered = if (needle.isEmpty()) options else options.filter {
@@ -596,12 +614,17 @@ private fun ModelPicker(options: List<ModelOption>, selected: String, onPick: (S
                 )
                 rows.take(80).forEach { m ->
                     val sel = m.id == selected
-                    Text(
-                        m.label.ifBlank { m.id },
-                        color = if (sel) Wui.Accent else Wui.Text,
-                        fontSize = 13.sp,
-                        modifier = Modifier.fillMaxWidth().clickable { onPick(m.id) }.padding(10.dp, 7.dp),
-                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            m.label.ifBlank { m.id },
+                            color = if (sel) Wui.Accent else Wui.Text,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f).clickable { onPick(m.id) }.padding(10.dp, 7.dp),
+                        )
+                        if (sel && onDefault != null) {
+                            Text("Set default", color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.clickable { onDefault(m) }.padding(10.dp, 7.dp))
+                        }
+                    }
                 }
                 if (rows.size > 80) {
                     Text("Type to filter ${rows.size - 80} more…", color = Wui.Muted, fontSize = 11.sp, modifier = Modifier.padding(10.dp, 2.dp))

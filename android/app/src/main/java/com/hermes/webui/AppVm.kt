@@ -114,6 +114,14 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val termRows = mutableStateOf(24)
     val termCols = mutableStateOf(80)
     val pendingShare = mutableStateOf<android.net.Uri?>(null)
+    val personalities = mutableStateListOf<PersonalityRow>()
+    val activePersonality = mutableStateOf("")
+    val auxModels = mutableStateListOf<AuxModelRow>()
+    val registry = mutableStateListOf<RegistryEntry>()
+    val health = mutableStateOf(HealthInfo())
+    val runningCrons = mutableStateOf<Set<String>>(emptySet())
+    val wsSuggestions = mutableStateListOf<String>()
+    val compressing = mutableStateOf(false)
     var sid = ""
         private set
     private var streamId = ""
@@ -265,6 +273,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                     Panel.Tasks -> {
                         val list = withContext(Dispatchers.IO) { c.crons() }
                         jobs.clear(); jobs.addAll(list)
+                        runningCrons.value = withContext(Dispatchers.IO) { runCatching { c.cronsRunning() }.getOrDefault(emptySet()) }
                     }
                     Panel.Kanban -> loadKanban()
                     Panel.Skills -> {
@@ -307,6 +316,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                         extensions.clear(); extensions.addAll(ext)
                         val mcp = withContext(Dispatchers.IO) { runCatching { c.mcpServers() }.getOrDefault(emptyList()) }
                         mcpServers.clear(); mcpServers.addAll(mcp)
+                        val aux = withContext(Dispatchers.IO) { runCatching { c.auxModels() }.getOrDefault(emptyList()) }
+                        auxModels.clear(); auxModels.addAll(aux)
+                        val reg = withContext(Dispatchers.IO) { runCatching { c.extensionsRegistry() }.getOrDefault(emptyList()) }
+                        registry.clear(); registry.addAll(reg)
+                        health.value = withContext(Dispatchers.IO) { runCatching { c.health() }.getOrDefault(HealthInfo()) }
                     }
                 }
             } catch (e: AuthException) {
@@ -646,6 +660,8 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             "retry" -> retryLast()
             "undo" -> undoLast()
             "yolo" -> toggleYolo()
+            "compress" -> compressSession()
+            "personality" -> if (rest.isBlank()) loadPersonalities() else setPersonality(if (rest.lowercase() in listOf("none", "default", "clear")) "" else rest)
             "title" -> if (rest.isBlank()) regenerateTitle() else execSlash(text)
             else -> execSlash(text)
         }
@@ -737,6 +753,122 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             commandOutput.value = if (msg == "ok") "Update $target started" else msg
             runCatching { updates.value = withContext(Dispatchers.IO) { c.updatesCheck() } }
             updatesBusy.value = false
+        }
+    }
+
+    fun loadPersonalities() {
+        val c = api ?: return
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { runCatching { c.personalities() }.getOrDefault(emptyList()) }
+            personalities.clear(); personalities.addAll(list)
+        }
+    }
+
+    fun setPersonality(name: String) {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.setPersonality(sid, name) } }
+            activePersonality.value = name
+            commandOutput.value = if (name.isBlank()) "Personality cleared" else "Personality set: $name"
+        }
+    }
+
+    fun setDefaultModel(opt: ModelOption) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.setDefaultModel(opt.provider, ModelIds.forSend(opt.id, opt.provider)) } }
+            commandOutput.value = "Default model saved: ${opt.label}"
+        }
+    }
+
+    fun refreshProviderModels(provider: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val msg = withContext(Dispatchers.IO) { runCatching { c.refreshModels(provider) }.getOrElse { it.message.orEmpty() } }
+            commandOutput.value = if (msg == "ok") "Models refreshed for $provider" else msg
+            loadModels()
+        }
+    }
+
+    fun removeProviderKey(provider: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.deleteProviderKey(provider) } }
+            loadPanel(Panel.Settings)
+        }
+    }
+
+    fun toggleExtension(id: String, enabled: Boolean) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.extensionToggle(id, enabled) } }
+            commandOutput.value = "Extension ${if (enabled) "enabled" else "disabled"}. Reload WebUI to apply."
+            loadPanel(Panel.Settings)
+        }
+    }
+
+    fun installExtension(entry: RegistryEntry) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { runCatching { c.extensionInstall(entry); true }.getOrDefault(false) }
+            commandOutput.value = if (ok) "Installed ${entry.name}" else "Install failed: ${entry.name}"
+            loadPanel(Panel.Settings)
+        }
+    }
+
+    fun uninstallExtension(id: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.extensionUninstall(id) } }
+            loadPanel(Panel.Settings)
+        }
+    }
+
+    fun compressSession() {
+        val c = api ?: return
+        if (sid.isBlank() || compressing.value) return
+        compressing.value = true
+        val target = sid
+        viewModelScope.launch {
+            try {
+                val first = withContext(Dispatchers.IO) { c.compressStart(target) }
+                var status = first
+                var err = ""
+                while (status != "done" && status != "error") {
+                    delay(900)
+                    val (s, e) = withContext(Dispatchers.IO) { c.compressStatus(target) }
+                    status = s; err = e
+                }
+                commandOutput.value = if (status == "done") "Session compressed" else "Compression failed: ${err.ifBlank { "error" }}"
+                if (sid == target) open(target, keepPanel = true)
+            } catch (e: Exception) {
+                commandOutput.value = "Compression failed: ${e.message}"
+            }
+            compressing.value = false
+        }
+    }
+
+    fun suggestWorkspaces(prefix: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { runCatching { c.workspacesSuggest(prefix) }.getOrDefault(emptyList()) }
+            wsSuggestions.clear(); wsSuggestions.addAll(list)
+        }
+    }
+
+    fun moveWorkspace(path: String, up: Boolean) {
+        val c = api ?: return
+        val paths = spaces.mapNotNull { it.path.takeIf { p -> p.isNotBlank() } }.toMutableList()
+        val i = paths.indexOf(path)
+        if (i < 0) return
+        val j = if (up) i - 1 else i + 1
+        if (j < 0 || j >= paths.size) return
+        paths[i] = paths[j].also { paths[j] = paths[i] }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.workspacesReorder(paths) } }
+            loadModels()
+            loadPanel(Panel.Spaces)
         }
     }
 

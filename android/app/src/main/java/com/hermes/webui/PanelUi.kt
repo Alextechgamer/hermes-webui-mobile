@@ -79,6 +79,9 @@ fun TasksPane(vm: AppVm) {
                 Column(Modifier.fillMaxWidth().padding(16.dp, 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(job.name, color = Wui.Text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        if (job.id in vm.runningCrons.value) {
+                            Text("running", color = Wui.Accent, fontSize = 11.sp, modifier = Modifier.padding(end = 6.dp).background(Wui.AccentBg, RoundedCornerShape(6.dp)).padding(8.dp, 3.dp))
+                        }
                         val chip = if (job.paused) "paused" else if (job.enabled) "on" else "off"
                         val chipColor = if (job.paused) Wui.Muted else if (job.enabled) Wui.Ok else Wui.Muted
                         Text(chip, color = chipColor, fontSize = 11.sp, modifier = Modifier.background(Wui.Surface, RoundedCornerShape(6.dp)).padding(8.dp, 3.dp))
@@ -291,7 +294,15 @@ fun SpacesPane(vm: AppVm) {
         }
         if (showAdd) {
             Column(Modifier.fillMaxWidth().padding(16.dp, 4.dp).background(Wui.Surface, RoundedCornerShape(10.dp)).padding(12.dp)) {
-                OutlinedTextField(newPath, { newPath = it }, label = { Text("Absolute path on the server") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(
+                    newPath,
+                    { newPath = it; vm.suggestWorkspaces(it.trim()) },
+                    label = { Text("Absolute path on the server") },
+                    colors = fieldColors(), modifier = Modifier.fillMaxWidth(), singleLine = true,
+                )
+                vm.wsSuggestions.take(5).forEach { s ->
+                    Text(s, color = Wui.AccentText, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth().clickable { newPath = s }.padding(vertical = 4.dp))
+                }
                 TextButton(onClick = {
                     if (newPath.isNotBlank()) { vm.addWorkspace(newPath.trim()); showAdd = false; newPath = "" }
                 }) { Text("Add", color = Wui.Accent) }
@@ -305,7 +316,11 @@ fun SpacesPane(vm: AppVm) {
                         Text(s.name + if (s.last) " · last" else "", color = if (s.last) Wui.Accent else Wui.Text)
                         if (s.path.isNotBlank()) Text(s.path, color = Wui.Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     }
-                    if (s.path.isNotBlank()) Text("Remove", color = Wui.Danger, fontSize = 12.sp, modifier = Modifier.clickable { vm.removeWorkspace(s.path) })
+                    if (s.path.isNotBlank()) {
+                        Text("↑", color = Wui.Muted, fontSize = 14.sp, modifier = Modifier.padding(end = 10.dp).clickable { vm.moveWorkspace(s.path, up = true) })
+                        Text("↓", color = Wui.Muted, fontSize = 14.sp, modifier = Modifier.padding(end = 10.dp).clickable { vm.moveWorkspace(s.path, up = false) })
+                        Text("Remove", color = Wui.Danger, fontSize = 12.sp, modifier = Modifier.clickable { vm.removeWorkspace(s.path) })
+                    }
                 }
                 HorizontalDivider(color = Wui.Border)
             }

@@ -67,8 +67,14 @@ Auth is cookie + CSRF. No bearer token.
 | Sessions extras | `GET /api/projects`; pin/archive/rename/duplicate/move/clear/share | `/api/session/{pin,archive,rename,duplicate,move,clear,delete}`, `/api/share/{create,revoke}`, `/api/projects/{create,delete,rename}` |
 | Session export/import | `GET /api/session/export?session_id=` (JSON) `&format=html`; Markdown is client transcript | `POST /api/session/import` (JSON body), `POST /api/session/branch` `{session_id}` |
 | Session search | `GET /api/sessions/search?q=` | — |
-| Cron extras | `GET /api/crons/history?job_id=` `{runs}` | `POST /api/crons/update` `{job_id,schedule,name,prompt,deliver}` |
+| Cron extras | `GET /api/crons/history?job_id=` `{runs}`, `GET /api/crons/status` `{running}` | `POST /api/crons/update` `{job_id,schedule,name,prompt,deliver}` |
 | MCP | `GET /api/mcp/servers` `{servers}` | — |
+| Personalities | `GET /api/personalities` | `POST /api/personality/set` `{session_id,name}` ('' clears) |
+| Models extras | `GET /api/model/auxiliary` `{tasks}` | `POST /api/model/set` `{scope:"main",provider,model,advanced:{}}`, `POST /api/models/refresh` `{provider}`, `POST /api/providers/delete` `{provider}` |
+| Extensions | `GET /api/extensions/registry` `{entries}` | `POST /api/extensions/{toggle,install,uninstall}` |
+| Compression | `GET /api/session/compress/status?session_id=` | `POST /api/session/compress/start` `{session_id}` then poll status until done/error |
+| Workspaces extras | `GET /api/workspaces/suggest?prefix=` | `POST /api/workspaces/reorder` `{paths}` |
+| Health | `GET /api/system/health`, `GET /api/health/agent`, `GET /api/gateway/status` | — |
 | Kanban extras | boards list | `POST /api/kanban/boards` `{slug,name,switch}`, `POST /api/kanban/tasks/bulk` `{ids,status}` |
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save`, `/api/file/create` `{path,content}`, `/api/file/create-dir`, `/api/file/delete` `{path,recursive}`, `/api/file/rename` `{path,new_name}`, `/api/file/move` `{path,dest_dir}` |
 | Slash commands | `GET /api/commands` | `POST /api/commands/exec` `{command}`; retry/undo/yolo/title also have dedicated session endpoints |

@@ -10,6 +10,7 @@ struct ChatPane: View {
     @State private var showModels = false
     @State private var showProfiles = false
     @State private var showReasoning = false
+    @State private var showPersonalities = false
     @State private var modelQuery = ""
     @State private var pickingFiles = false
     @State private var pickingPhotos = false
@@ -197,7 +198,9 @@ struct ChatPane: View {
                 }
             }
             if showModels && !store.models.isEmpty {
-                ModelPicker(options: store.models, selected: store.selectedModel, query: $modelQuery) { m in
+                ModelPicker(options: store.models, selected: store.selectedModel, query: $modelQuery, onDefault: { m in
+                    Task { await store.setDefaultModel(m) }
+                }) { m in
                     store.pickModel(m)
                     showModels = false
                 }
@@ -206,6 +209,12 @@ struct ChatPane: View {
                 ChipMenu(items: store.reasoning.options().map { ($0.1, $0.0) }) { effort in
                     Task { await store.setReasoning(effort) }
                     showReasoning = false
+                }
+            }
+            if showPersonalities && !store.personalities.isEmpty {
+                ChipMenu(items: [("Default", "")] + store.personalities.map { ($0.name, $0.name) }) { name in
+                    Task { await store.setPersonality(name) }
+                    showPersonalities = false
                 }
             }
             let slashHits = store.matchingCommands(draft)
@@ -305,6 +314,13 @@ struct ChatPane: View {
                         }
                         FooterChip(symbol: "bolt", label: store.yoloEnabled ? "YOLO on" : "YOLO") {
                             Task { await store.toggleYolo() }
+                        }
+                        FooterChip(symbol: "theatermasks", label: store.activePersonality.isEmpty ? "Persona" : store.activePersonality) {
+                            if store.personalities.isEmpty { Task { await store.loadPersonalities() } }
+                            showPersonalities.toggle(); showModels = false; showPrompts = false; showProfiles = false; showReasoning = false
+                        }
+                        FooterChip(symbol: "arrow.down.right.and.arrow.up.left", label: store.compressing ? "Compressing…" : "Compress") {
+                            Task { await store.compressSession() }
                         }
                         Spacer(minLength: 8)
                         if store.busy {
@@ -510,6 +526,7 @@ struct ModelPicker: View {
     let options: [ModelOption]
     let selected: String
     @Binding var query: String
+    var onDefault: ((ModelOption) -> Void)? = nil
     let onPick: (String) -> Void
 
     var body: some View {
@@ -539,14 +556,22 @@ struct ModelPicker: View {
                             .padding(.top, 8)
                         let rows = grouped[provider] ?? []
                         ForEach(rows.prefix(80)) { m in
-                            Text(m.label.isEmpty ? m.id : m.label)
-                                .font(.system(size: 13))
-                                .foregroundColor(m.id == selected ? Palette.accent : Palette.text)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .contentShape(Rectangle())
-                                .onTapGesture { onPick(m.id) }
+                            HStack(spacing: 0) {
+                                Text(m.label.isEmpty ? m.id : m.label)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(m.id == selected ? Palette.accent : Palette.text)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { onPick(m.id) }
+                                if m.id == selected, let onDefault {
+                                    Button("Set default") { onDefault(m) }
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Palette.muted)
+                                        .padding(.trailing, 10)
+                                }
+                            }
                         }
                     }
                 }

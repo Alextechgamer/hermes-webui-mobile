@@ -315,6 +315,127 @@ final class APIClient {
         }
     }
 
+    func personalities() async -> [PersonalityRow] {
+        guard let o = try? await dict("/api/personalities") else { return [] }
+        return (o["personalities"] as? [[String: Any]] ?? []).compactMap { p in
+            let name = (p["name"] as? String) ?? ""
+            guard !name.isEmpty else { return nil }
+            return PersonalityRow(name: name, description: (p["description"] as? String) ?? "")
+        }
+    }
+
+    func setPersonality(sid: String, name: String) async {
+        _ = try? await postJSON("/api/personality/set", body: ["session_id": sid, "name": name])
+    }
+
+    func setDefaultModel(provider: String, model: String) async {
+        _ = try? await postJSON("/api/model/set", body: ["scope": "main", "task": "", "provider": provider, "model": model, "advanced": [String: Any]()])
+    }
+
+    func auxModels() async -> [AuxModelRow] {
+        guard let o = try? await dict("/api/model/auxiliary") else { return [] }
+        return (o["tasks"] as? [[String: Any]] ?? []).compactMap { t in
+            let task = (t["task"] as? String) ?? ""
+            guard !task.isEmpty else { return nil }
+            return AuxModelRow(
+                task: task,
+                label: ((t["label"] as? String) ?? "").isEmpty ? task : (t["label"] as? String)!,
+                provider: (t["provider"] as? String) ?? "",
+                model: (t["model"] as? String) ?? "",
+                description: (t["description"] as? String) ?? ""
+            )
+        }
+    }
+
+    func refreshModels(provider: String) async -> String {
+        guard let data = try? await postJSON("/api/models/refresh", body: ["provider": provider]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "refresh failed" }
+        if (obj["ok"] as? Bool) == true { return "ok" }
+        return (obj["error"] as? String) ?? "refresh failed"
+    }
+
+    func deleteProviderKey(provider: String) async {
+        _ = try? await postJSON("/api/providers/delete", body: ["provider": provider])
+    }
+
+    func extensionsRegistry() async -> [RegistryEntry] {
+        guard let o = try? await dict("/api/extensions/registry") else { return [] }
+        return (o["entries"] as? [[String: Any]] ?? []).compactMap { e in
+            let id = (e["id"] as? String) ?? ""
+            guard !id.isEmpty else { return nil }
+            return RegistryEntry(
+                id: id,
+                name: ((e["name"] as? String) ?? "").isEmpty ? id : (e["name"] as? String)!,
+                description: (e["description"] as? String) ?? "",
+                version: (e["version"] as? String) ?? "",
+                author: (e["author"] as? String) ?? "",
+                downloadUrl: (e["download_url"] as? String) ?? (e["download"] as? String) ?? "",
+                sha256: (e["sha256"] as? String) ?? ""
+            )
+        }
+    }
+
+    func extensionToggle(id: String, enabled: Bool) async {
+        _ = try? await postJSON("/api/extensions/toggle", body: ["id": id, "enabled": enabled])
+    }
+
+    func extensionInstall(_ entry: RegistryEntry) async {
+        var body: [String: Any] = ["id": entry.id]
+        if !entry.downloadUrl.isEmpty { body["download_url"] = entry.downloadUrl }
+        if !entry.sha256.isEmpty { body["sha256"] = entry.sha256 }
+        _ = try? await postJSON("/api/extensions/install", body: body)
+    }
+
+    func extensionUninstall(id: String) async {
+        _ = try? await postJSON("/api/extensions/uninstall", body: ["id": id])
+    }
+
+    func compressStart(sid: String) async -> String {
+        guard let data = try? await postJSON("/api/session/compress/start", body: ["session_id": sid]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "started" }
+        return (obj["status"] as? String) ?? "started"
+    }
+
+    func compressStatus(sid: String) async -> (String, String) {
+        guard let o = try? await dict("/api/session/compress/status?session_id=\(q(sid))") else { return ("error", "status failed") }
+        return ((o["status"] as? String) ?? "", (o["error"] as? String) ?? "")
+    }
+
+    func workspacesSuggest(prefix: String) async -> [String] {
+        guard let o = try? await dict("/api/workspaces/suggest?prefix=\(q(prefix))") else { return [] }
+        return (o["suggestions"] as? [String]) ?? []
+    }
+
+    func workspacesReorder(paths: [String]) async {
+        _ = try? await postJSON("/api/workspaces/reorder", body: ["paths": paths])
+    }
+
+    func health() async -> HealthInfo {
+        guard let o = try? await dict("/api/system/health") else { return HealthInfo() }
+        let agent = try? await dict("/api/health/agent")
+        let gw = try? await dict("/api/gateway/status")
+        let runtime = o["webui_runtime"] as? [String: Any]
+        func pct(_ key: String) -> Double {
+            ((o[key] as? [String: Any])?["percent"] as? Double) ?? Double((o[key] as? [String: Any])?["percent"] as? Int ?? 0)
+        }
+        return HealthInfo(
+            status: (o["status"] as? String) ?? "",
+            cpuPct: pct("cpu"),
+            memPct: pct("memory"),
+            diskPct: pct("disk"),
+            agentAlive: (agent?["alive"] as? Bool) ?? false,
+            gatewayRunning: (gw?["running"] as? Bool) ?? false,
+            residentSessions: ((runtime?["sessions"] as? [String: Any])?["resident"] as? Int) ?? 0,
+            activeStreams: ((runtime?["streams"] as? [String: Any])?["active"] as? Int) ?? 0
+        )
+    }
+
+    func cronsRunning() async -> Set<String> {
+        guard let o = try? await dict("/api/crons/status"),
+              let running = o["running"] as? [String: Any] else { return [] }
+        return Set(running.keys)
+    }
+
     func projects() async -> [ProjectRow] {
         guard let o = try? await dict("/api/projects") else { return [] }
         return (o["projects"] as? [[String: Any]] ?? []).compactMap { p in

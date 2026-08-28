@@ -275,6 +275,118 @@ class ApiClient(base: String, prefs: Prefs) {
         }
     }
 
+    fun personalities(): List<PersonalityRow> {
+        val o = runCatching { parse("/api/personalities").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("personalities") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val p = el.asObjOrNull() ?: return@mapNotNull null
+            val name = p.str("name")
+            if (name.isBlank()) return@mapNotNull null
+            PersonalityRow(name, p.str("description").take(200))
+        }
+    }
+
+    fun setPersonality(sid: String, name: String) {
+        postRaw("/api/personality/set", """{"session_id":${q(sid)},"name":${q(name)}}""")
+    }
+
+    fun setDefaultModel(provider: String, model: String) {
+        postRaw("/api/model/set", """{"scope":"main","task":"","provider":${q(provider)},"model":${q(model)},"advanced":{}}""")
+    }
+
+    fun auxModels(): List<AuxModelRow> {
+        val o = runCatching { parse("/api/model/auxiliary").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("tasks") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val t = el.asObjOrNull() ?: return@mapNotNull null
+            val task = t.str("task")
+            if (task.isBlank()) return@mapNotNull null
+            AuxModelRow(task, t.str("label").ifBlank { task }, t.str("provider"), t.str("model"), t.str("description"))
+        }
+    }
+
+    fun refreshModels(provider: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/models/refresh", """{"provider":${q(provider)}}""")).asObj()
+        return if (el.bool("ok")) "ok" else el.str("error").ifBlank { "refresh failed" }
+    }
+
+    fun deleteProviderKey(provider: String) {
+        postRaw("/api/providers/delete", """{"provider":${q(provider)}}""")
+    }
+
+    fun extensionsRegistry(): List<RegistryEntry> {
+        val o = runCatching { parse("/api/extensions/registry").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("entries") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val e = el.asObjOrNull() ?: return@mapNotNull null
+            val id = e.str("id")
+            if (id.isBlank()) return@mapNotNull null
+            RegistryEntry(
+                id = id,
+                name = e.str("name").ifBlank { id },
+                description = e.str("description").take(240),
+                version = e.str("version"),
+                author = e.str("author"),
+                downloadUrl = e.str("download_url", "download"),
+                sha256 = e.str("sha256"),
+                installed = e.bool("installed"),
+            )
+        }
+    }
+
+    fun extensionToggle(id: String, enabled: Boolean) {
+        postRaw("/api/extensions/toggle", """{"id":${q(id)},"enabled":$enabled}""")
+    }
+
+    fun extensionInstall(entry: RegistryEntry) {
+        val parts = mutableListOf("\"id\":${q(entry.id)}")
+        if (entry.downloadUrl.isNotBlank()) parts += "\"download_url\":${q(entry.downloadUrl)}"
+        if (entry.sha256.isNotBlank()) parts += "\"sha256\":${q(entry.sha256)}"
+        postRaw("/api/extensions/install", "{" + parts.joinToString(",") + "}")
+    }
+
+    fun extensionUninstall(id: String) {
+        postRaw("/api/extensions/uninstall", """{"id":${q(id)}}""")
+    }
+
+    fun compressStart(sid: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/session/compress/start", """{"session_id":${q(sid)}}""")).asObj()
+        return el.str("status").ifBlank { "started" }
+    }
+
+    fun compressStatus(sid: String): Pair<String, String> {
+        val el = parse("/api/session/compress/status?session_id=${enc(sid)}").asObj()
+        return el.str("status") to el.str("error")
+    }
+
+    fun workspacesSuggest(prefix: String): List<String> {
+        val o = runCatching { parse("/api/workspaces/suggest?prefix=${enc(prefix)}").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("suggestions") ?: JsonArray(emptyList())).mapNotNull { it.primitiveOrNull() }
+    }
+
+    fun workspacesReorder(paths: List<String>) {
+        postRaw("/api/workspaces/reorder", """{"paths":[${paths.joinToString(",") { q(it) }}]}""")
+    }
+
+    fun health(): HealthInfo {
+        val o = runCatching { parse("/api/system/health").asObj() }.getOrNull() ?: return HealthInfo()
+        val agent = runCatching { parse("/api/health/agent").asObj() }.getOrNull()
+        val gw = runCatching { parse("/api/gateway/status").asObj() }.getOrNull()
+        val runtime = o.obj("webui_runtime")
+        return HealthInfo(
+            status = o.str("status"),
+            cpuPct = o.obj("cpu")?.double("percent") ?: 0.0,
+            memPct = o.obj("memory")?.double("percent") ?: 0.0,
+            diskPct = o.obj("disk")?.double("percent") ?: 0.0,
+            agentAlive = agent?.bool("alive") ?: false,
+            gatewayRunning = gw?.bool("running") ?: false,
+            residentSessions = runtime?.obj("sessions")?.int("resident") ?: 0,
+            activeStreams = runtime?.obj("streams")?.int("active") ?: 0,
+        )
+    }
+
+    fun cronsRunning(): Set<String> {
+        val o = runCatching { parse("/api/crons/status").asObj() }.getOrNull() ?: return emptySet()
+        return o.obj("running")?.keys ?: emptySet()
+    }
+
     fun projects(): List<ProjectRow> {
         val o = runCatching { parse("/api/projects").asObj() }.getOrNull() ?: return emptyList()
         return (o.arr("projects") ?: JsonArray(emptyList())).mapNotNull { el ->

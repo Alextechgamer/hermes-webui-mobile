@@ -186,7 +186,11 @@ private fun ProvidersSettings(vm: AppVm) {
                             TextButton(onClick = { editing = null; key = "" }) { Text("Cancel", color = Wui.Muted) }
                         }
                     } else {
-                        Text("Set key", color = Wui.Accent, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp).clickable { editing = p.id; key = "" })
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            Text("Set key", color = Wui.Accent, fontSize = 13.sp, modifier = Modifier.clickable { editing = p.id; key = "" })
+                            Text("Refresh models", color = Wui.Muted, fontSize = 13.sp, modifier = Modifier.clickable { vm.refreshProviderModels(p.id) })
+                            if (p.hasKey) Text("Remove key", color = Wui.Danger, fontSize = 13.sp, modifier = Modifier.clickable { vm.removeProviderKey(p.id) })
+                        }
                     }
                 }
             }
@@ -195,6 +199,20 @@ private fun ProvidersSettings(vm: AppVm) {
         leftover.forEach { SettingRow(vm, it) }
         if (vm.settingEdits.value.isNotEmpty()) {
             TextButton(onClick = { vm.saveSettings() }) { Text("Save setting changes", color = Wui.Accent) }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Auxiliary models", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text("Per-task helpers (vision, web extract, compression…) — /api/model/auxiliary.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        if (vm.auxModels.isEmpty()) Text("No auxiliary tasks reported.", color = Wui.Muted)
+        vm.auxModels.forEach { a ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(WuiShapeMd).background(Wui.Surface).padding(12.dp)) {
+                Text(a.label, color = Wui.Text, fontWeight = FontWeight.SemiBold)
+                Text(
+                    (a.description.takeIf { it.isNotBlank() }?.plus(" · ") ?: "") +
+                        (if (a.model.isBlank()) "auto" else "${a.provider.ifBlank { "auto" }} / ${a.model}"),
+                    color = Wui.Muted, fontSize = 12.sp,
+                )
+            }
         }
     }
 }
@@ -237,9 +255,29 @@ private fun ExtensionsSettings(vm: AppVm) {
             Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(WuiShapeMd).background(Wui.Surface).padding(12.dp)) {
                 Row {
                     Text(e.name, color = Wui.Text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Text(if (e.enabled) "on" else "off", color = if (e.enabled) Wui.Ok else Wui.Muted, fontSize = 12.sp)
+                    Text(if (e.enabled) "Disable" else "Enable", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp).clickable { vm.toggleExtension(e.id, !e.enabled) })
+                    Text("Uninstall", color = Wui.Danger, fontSize = 12.sp, modifier = Modifier.clickable { vm.uninstallExtension(e.id) })
                 }
                 if (e.description.isNotBlank()) Text(e.description, color = Wui.Muted, fontSize = 12.sp)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Gallery", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text("Registry from /api/extensions/registry. Install same as desktop.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        if (vm.registry.isEmpty()) Text("Registry unavailable.", color = Wui.Muted)
+        vm.registry.forEach { r ->
+            val installed = vm.extensions.any { it.id == r.id }
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(WuiShapeMd).background(Wui.Surface).padding(12.dp)) {
+                Row {
+                    Text(r.name, color = Wui.Text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (installed) Text("installed", color = Wui.Ok, fontSize = 12.sp)
+                    else Text("Install", color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.clickable { vm.installExtension(r) })
+                }
+                Text(
+                    listOf(r.version.takeIf { it.isNotBlank() }?.let { "v$it" }, r.author.takeIf { it.isNotBlank() }).filterNotNull().joinToString(" · "),
+                    color = Wui.Muted, fontSize = 11.sp,
+                )
+                if (r.description.isNotBlank()) Text(r.description, color = Wui.Muted, fontSize = 12.sp)
             }
         }
     }
@@ -250,6 +288,19 @@ private fun SystemSettings(vm: AppVm) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("System", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         Text("Instance access and Hermes Console.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        Column(Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).padding(14.dp)) {
+            val h = vm.health.value
+            Text("Health", color = Wui.Text, fontWeight = FontWeight.SemiBold)
+            Text(
+                "server ${h.status.ifBlank { "?" }} · cpu ${h.cpuPct.toInt()}% · mem ${h.memPct.toInt()}% · disk ${h.diskPct.toInt()}%",
+                color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(
+                "agent ${if (h.agentAlive) "alive" else "down"} · gateway ${if (h.gatewayRunning) "running" else "stopped"} · ${h.residentSessions} sessions · ${h.activeStreams} live",
+                color = Wui.Muted, fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         Row(
             Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).clickable { vm.signOut() }.padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

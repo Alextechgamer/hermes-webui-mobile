@@ -40,6 +40,13 @@ struct TasksPane: View {
                     HStack {
                         Text(job.name).foregroundColor(Palette.text)
                         Spacer()
+                        if store.runningCrons.contains(job.id) {
+                            Text("running")
+                                .font(.caption)
+                                .foregroundColor(Palette.accent)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Palette.accentBg).cornerRadius(6)
+                        }
                         Text(job.paused ? "paused" : (job.enabled ? "on" : "off"))
                             .font(.caption)
                             .foregroundColor(job.paused ? Palette.muted : (job.enabled ? Palette.ok : Palette.muted))
@@ -504,7 +511,14 @@ struct SpacesPane: View {
             }.listRowBackground(Palette.bg)
             if showAdd {
                 VStack(alignment: .leading) {
-                    TextField("Absolute path on the server", text: $newPath).foregroundColor(Palette.text)
+                    TextField("Absolute path on the server", text: $newPath)
+                        .foregroundColor(Palette.text)
+                        .onChange(of: newPath) { p in Task { await store.suggestWorkspaces(p) } }
+                    ForEach(store.wsSuggestions.prefix(5), id: \.self) { s in
+                        Button(s) { newPath = s }
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(Palette.accentText)
+                    }
                     Button("Add") {
                         Task { await store.addWorkspace(newPath) }
                         showAdd = false; newPath = ""
@@ -519,6 +533,8 @@ struct SpacesPane: View {
                     }
                     Spacer()
                     if !s.path.isEmpty {
+                        Button("↑") { Task { await store.moveWorkspace(s.path, up: true) } }.foregroundColor(Palette.muted)
+                        Button("↓") { Task { await store.moveWorkspace(s.path, up: false) } }.foregroundColor(Palette.muted)
                         Button("Remove") { Task { await store.removeWorkspace(s.path) } }.font(.caption).foregroundColor(Palette.danger)
                     }
                 }.listRowBackground(Palette.surface)

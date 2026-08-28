@@ -95,6 +95,14 @@ final class AppStore: ObservableObject {
     @Published var termRows = 24
     @Published var termCols = 80
     @Published var shareExportURL: URL?
+    @Published var personalities: [PersonalityRow] = []
+    @Published var activePersonality = ""
+    @Published var auxModels: [AuxModelRow] = []
+    @Published var registry: [RegistryEntry] = []
+    @Published var health = HealthInfo()
+    @Published var runningCrons: Set<String> = []
+    @Published var wsSuggestions: [String] = []
+    @Published var compressing = false
     var currentSid: String = ""
     var streamId: String = ""
     var afterSeq: Int64 = 0
@@ -294,7 +302,9 @@ final class AppStore: ObservableObject {
         do {
             switch panel {
             case .chat: await loadSessions()
-            case .tasks: jobs = try await c.crons()
+            case .tasks:
+                jobs = try await c.crons()
+                runningCrons = await c.cronsRunning()
             case .kanban: await loadKanban()
             case .skills: skills = try await c.skills()
             case .memory: memory = try await c.memory()
@@ -320,6 +330,9 @@ final class AppStore: ObservableObject {
                 plugins = (try? await c.plugins()) ?? []
                 extensions = (try? await c.extensions()) ?? []
                 mcpServers = await c.mcpServers()
+                auxModels = await c.auxModels()
+                registry = await c.extensionsRegistry()
+                health = await c.health()
             }
         } catch {
             self.error = error.localizedDescription
@@ -851,6 +864,10 @@ final class AppStore: ObservableObject {
         case "retry": await retryLast()
         case "undo": await undoLast()
         case "yolo": await toggleYolo()
+        case "compress": await compressSession()
+        case "personality":
+            if rest.isEmpty { await loadPersonalities() }
+            else { await setPersonality(["none", "default", "clear"].contains(rest.lowercased()) ? "" : rest) }
         case "title":
             if rest.isEmpty { await regenerateTitle() } else { await execSlash(text) }
         default: await execSlash(text)
@@ -915,6 +932,81 @@ final class AppStore: ObservableObject {
         commandOutput = msg == "ok" ? "Update \(target) started" : msg
         updates = await client?.updatesCheck() ?? updates
         updatesBusy = false
+    }
+
+    func loadPersonalities() async {
+        personalities = await client?.personalities() ?? []
+    }
+
+    func setPersonality(_ name: String) async {
+        guard !currentSid.isEmpty else { return }
+        await client?.setPersonality(sid: currentSid, name: name)
+        activePersonality = name
+        commandOutput = name.isEmpty ? "Personality cleared" : "Personality set: \(name)"
+    }
+
+    func setDefaultModel(_ opt: ModelOption) async {
+        await client?.setDefaultModel(provider: opt.provider, model: ModelIds.forSend(opt.id, provider: opt.provider))
+        commandOutput = "Default model saved: \(opt.label)"
+    }
+
+    func refreshProviderModels(_ provider: String) async {
+        let msg = await client?.refreshModels(provider: provider) ?? "refresh failed"
+        commandOutput = msg == "ok" ? "Models refreshed for \(provider)" : msg
+        await loadModels()
+    }
+
+    func removeProviderKey(_ provider: String) async {
+        await client?.deleteProviderKey(provider: provider)
+        await loadPanel()
+    }
+
+    func toggleExtension(_ id: String, _ enabled: Bool) async {
+        await client?.extensionToggle(id: id, enabled: enabled)
+        commandOutput = "Extension \(enabled ? "enabled" : "disabled"). Reload WebUI to apply."
+        await loadPanel()
+    }
+
+    func installExtension(_ entry: RegistryEntry) async {
+        await client?.extensionInstall(entry)
+        commandOutput = "Installed \(entry.name)"
+        await loadPanel()
+    }
+
+    func uninstallExtension(_ id: String) async {
+        await client?.extensionUninstall(id: id)
+        await loadPanel()
+    }
+
+    func compressSession() async {
+        guard !currentSid.isEmpty, !compressing, let c = client else { return }
+        compressing = true
+        let target = currentSid
+        var status = await c.compressStart(sid: target)
+        var err = ""
+        while status != "done" && status != "error" {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            let (s, e) = await c.compressStatus(sid: target)
+            status = s; err = e
+        }
+        commandOutput = status == "done" ? "Session compressed" : "Compression failed: \(err.isEmpty ? "error" : err)"
+        if currentSid == target { await openSid(target, keepPanel: true) }
+        compressing = false
+    }
+
+    func suggestWorkspaces(_ prefix: String) async {
+        wsSuggestions = await client?.workspacesSuggest(prefix: prefix) ?? []
+    }
+
+    func moveWorkspace(_ path: String, up: Bool) async {
+        var paths = spaces.compactMap { $0.path.isEmpty ? nil : $0.path }
+        guard let i = paths.firstIndex(of: path) else { return }
+        let j = up ? i - 1 : i + 1
+        guard j >= 0, j < paths.count else { return }
+        paths.swapAt(i, j)
+        await client?.workspacesReorder(paths: paths)
+        await loadModels()
+        await loadPanel()
     }
 
     func startTerm() async {

@@ -46,7 +46,12 @@ the migration row.
   Android — not tap-to-advance columns.
 - [ ] **Conversations** — WebUI/CLI tabs, project chips, pin/archive/rename/duplicate/share/export JSON+HTML+Markdown/branch/move/delete, retry/undo/regenerate title. Import JSON. Filter hits `/api/sessions/search`.
 - [ ] **Files** — create file/folder, rename, move, delete, save.
-- [ ] **Tasks** — Edit (name/schedule/prompt/deliver) + Output history from `/api/crons/history`.
+- [ ] **Tasks** — Edit (name/schedule/prompt/deliver) + Output history from `/api/crons/history`; live `running` badge from `/api/crons/status`.
+- [ ] **Chat chips** — Persona (personality set/clear) and Compress (start + poll) next to YOLO; model picker has Set default on the selected row.
+- [ ] **Settings → Providers** — Refresh models / Remove key per provider; Auxiliary models list.
+- [ ] **Settings → Extensions** — Enable/Disable/Uninstall + Gallery (registry) with Install.
+- [ ] **Settings → System** — Health card (cpu/mem/disk, agent, gateway, sessions, streams).
+- [ ] **Spaces** — path suggestions while typing; ↑/↓ reorder.
 - [ ] **Terminal** — rows/cols + Resize (`POST /api/terminal/resize`).
 - [ ] **Settings → Plugins** — MCP servers list (`GET /api/mcp/servers`).
 - [ ] **Slash commands** — typing `/` lists matching WebUI commands; send runs `/api/commands/exec` (retry/undo/yolo/title/new have dedicated handlers). YOLO chip in composer.
