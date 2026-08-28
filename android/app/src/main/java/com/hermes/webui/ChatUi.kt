@@ -500,13 +500,16 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 },
             )
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(8.dp, 4.dp, 8.dp, 8.dp),
+                Modifier.fillMaxWidth().padding(8.dp, 4.dp, 8.dp, 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                 IconBtnSmall(Icons.Outlined.AttachFile, "Attach from phone") { pickFiles.launch(arrayOf("*/*")) }
                 IconBtnSmall(Icons.Outlined.BookmarkBorder, "Saved prompts") { showPrompts = !showPrompts }
                 IconBtnSmall(
@@ -541,9 +544,11 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                     showModels = false; showPrompts = false; showProfiles = false; showReasoning = false
                 }
                 FooterChip(Icons.Outlined.Build, if (vm.compressing.value) "Compressing…" else "Compress") { vm.compressSession() }
+                }
                 Spacer(Modifier.width(8.dp))
                 if (vm.busy.value) {
                     Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                    Spacer(Modifier.width(6.dp))
                 }
                 val canSend = draft.isNotBlank() || vm.pendingAttach.isNotEmpty()
                 Box(

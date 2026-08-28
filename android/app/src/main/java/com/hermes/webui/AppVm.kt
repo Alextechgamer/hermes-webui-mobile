@@ -405,8 +405,23 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     fun open(row: SessionRow) = open(row.sid)
 
+    private fun detachChatStream() {
+        // Leaving a session that may still be streaming: stop painting its events
+        // into the next view. The turn keeps running server-side; applyLoad()
+        // re-attaches via active_stream_id when we come back.
+        reconnect?.cancel()
+        es?.cancel()
+        es = null
+        streamId = ""
+        afterSeq = 0
+        afterEventId = ""
+        busy.value = false
+        keepAlive(false)
+    }
+
     fun open(id: String, keepPanel: Boolean = false) {
         val c = api ?: return
+        if (id != sid) detachChatStream()
         sid = id
         prefs.lastSid = id
         live.value = ""
@@ -456,6 +471,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         val c = api ?: return
         viewModelScope.launch {
             try {
+                detachChatStream()
                 sid = withContext(Dispatchers.IO) { c.newSession() }
                 prefs.lastSid = sid
                 bubbles.clear(); live.value = ""; todos.clear()
@@ -473,9 +489,20 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { runCatching { c.deleteSession(id) } }
             if (sid == id) {
+                detachChatStream()
                 sid = ""; bubbles.clear(); live.value = ""; title.value = "Hermes"
+                prefs.lastSid = ""
             }
             refreshSessions()
+            // Desktop parity (sessions.js): after deleting the CURRENT session,
+            // load the most recent remaining one so file/terminal ops keep a
+            // valid session_id. Blank only when none are left.
+            if (sid.isBlank()) {
+                val next = withContext(Dispatchers.IO) {
+                    runCatching { c.sessions(sessionSource.value, includeArchived.value).rows.firstOrNull { it.sid != id } }.getOrNull()
+                }
+                if (next != null) open(next.sid, keepPanel = true)
+            }
         }
     }
 

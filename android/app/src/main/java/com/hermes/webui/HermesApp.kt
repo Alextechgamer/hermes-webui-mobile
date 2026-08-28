@@ -410,7 +410,8 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
             qOk && pOk
         }
         val shown = (local + vm.searchHits.filter { hit -> local.none { it.sid == hit.sid } })
-            .sortedWith(compareByDescending<SessionRow> { it.pinned }.thenByDescending { it.msgCount })
+            // WebUI sidebar order: server already returns most-recent-first; only lift pinned.
+            .sortedWith(compareByDescending<SessionRow> { it.pinned })
         if (shown.isEmpty()) {
             Text("No conversations yet.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp, 6.dp))
         }

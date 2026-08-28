@@ -499,10 +499,10 @@ struct DrawerBody: View {
             return qOk && pOk
         }
         let extra = store.searchHits.filter { hit in !local.contains(where: { $0.sid == hit.sid }) }
-        return (local + extra).sorted { a, b in
-            if (a.pinned == true) != (b.pinned == true) { return a.pinned == true }
-            return a.msgCount > b.msgCount
-        }
+        // WebUI sidebar order: server already returns most-recent-first; only lift pinned.
+        // (Swift sort isn't stable — partition preserves relative order.)
+        let all = local + extra
+        return all.filter { $0.pinned == true } + all.filter { $0.pinned != true }
     }
 
     private func sourceChip(_ label: String, _ sel: Bool, _ action: @escaping () -> Void) -> some View {

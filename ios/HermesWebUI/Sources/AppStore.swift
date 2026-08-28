@@ -341,8 +341,20 @@ final class AppStore: ObservableObject {
 
     func open(_ row: SessionRow) async { await openSid(row.sid) }
 
+    private func detachChatStream() {
+        // Leaving a possibly-streaming session: stop painting its events into the
+        // next view. The turn keeps running server-side; apply() re-attaches via
+        // active_stream_id when we come back.
+        streamTask?.cancel()
+        streamTask = nil
+        streamId = ""
+        afterSeq = 0
+        busy = false
+    }
+
     func openSid(_ id: String, keepPanel: Bool = false) async {
         guard let c = client else { return }
+        if id != currentSid { detachChatStream() }
         currentSid = id
         UserDefaults.standard.set(id, forKey: "lastSid")
         liveText = ""
@@ -611,6 +623,7 @@ final class AppStore: ObservableObject {
     func newChat() async {
         guard let c = client else { return }
         do {
+            detachChatStream()
             currentSid = try await c.newSession()
             UserDefaults.standard.set(currentSid, forKey: "lastSid")
             messages = []; liveText = ""; todos = []
@@ -626,9 +639,16 @@ final class AppStore: ObservableObject {
         guard let c = client else { return }
         await c.deleteSession(id: id)
         if currentSid == id {
+            detachChatStream()
             currentSid = ""; messages = []; liveText = ""; title = "Hermes"
+            UserDefaults.standard.set("", forKey: "lastSid")
         }
         await loadSessions()
+        // Desktop parity (sessions.js): after deleting the CURRENT session, load
+        // the most recent remaining one so file/terminal ops keep a valid session_id.
+        if currentSid.isEmpty, let next = sessions.first(where: { $0.sid != id }) {
+            await openSid(next.sid, keepPanel: true)
+        }
     }
 
     func pinSession(_ row: SessionRow) async {

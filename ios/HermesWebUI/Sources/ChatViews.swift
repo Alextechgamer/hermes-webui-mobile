@@ -270,14 +270,15 @@ struct ChatPane: View {
                     .padding(.bottom, 4)
                     .foregroundColor(Palette.text)
                     .font(.system(size: 16))
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        Menu {
-                            Button("Photos") { pickingPhotos = true }
-                            Button("Files") { pickingFiles = true }
-                        } label: {
-                            Image(systemName: "paperclip").font(.system(size: 16)).foregroundColor(Palette.muted).frame(width: 32, height: 32)
-                        }
+                HStack(spacing: 0) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            Menu {
+                                Button("Photos") { pickingPhotos = true }
+                                Button("Files") { pickingFiles = true }
+                            } label: {
+                                Image(systemName: "paperclip").font(.system(size: 16)).foregroundColor(Palette.muted).frame(width: 32, height: 32)
+                            }
 
                         Button { showPrompts.toggle(); showModels = false; showProfiles = false } label: {
                             Image(systemName: "bookmark").font(.system(size: 16)).foregroundColor(Palette.muted).frame(width: 32, height: 32)
@@ -322,29 +323,34 @@ struct ChatPane: View {
                         FooterChip(symbol: "arrow.down.right.and.arrow.up.left", label: store.compressing ? "Compressing…" : "Compress") {
                             Task { await store.compressSession() }
                         }
-                        Spacer(minLength: 8)
-                        if store.busy {
-                            Text("STEER")
-                                .font(.system(size: 10, weight: .bold))
-                                .tracking(0.8)
-                                .foregroundColor(Palette.accent)
                         }
-                        Button {
-                            let t = draft
-                            draft = ""
-                            focused = false
-                            Task { await store.send(t) }
-                        } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(Palette.bg)
-                                .frame(width: 34, height: 34)
-                                .background(canSend ? Palette.accent : Palette.border)
-                                .clipShape(Circle())
-                        }
-                        .disabled(!canSend)
+                        .padding(.leading, 8)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 8)
+                    Spacer(minLength: 8)
+                    if store.busy {
+                        Text("STEER")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundColor(Palette.accent)
+                            .padding(.trailing, 6)
+                    }
+                    Button {
+                        let t = draft
+                        draft = ""
+                        focused = false
+                        Task { await store.send(t) }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Palette.bg)
+                            .frame(width: 34, height: 34)
+                            .background(canSend ? Palette.accent : Palette.border)
+                            .clipShape(Circle())
+                    }
+                    .disabled(!canSend)
+                    .padding(.trailing, 8)
                     .padding(.top, 4)
                     .padding(.bottom, 8)
                 }

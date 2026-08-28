@@ -167,8 +167,12 @@ class ApiClient(base: String, prefs: Prefs) {
         val el = parse("/api/sessions$qs")
         val arr = el.arrayOf("sessions", "data", "items")
         val o = el.asObj()
+        // The server may ignore ?source= and return everything; filter client-side
+        // exactly like desktop sessions.js _partitionSidebarSessionRows().
+        val all = arr.mapNotNull { it.asObjOrNull()?.toSession() }
+        val rows = if (source == "cli") all.filter { it.source == "cli" } else all.filter { it.source != "cli" }
         return SessionsResult(
-            rows = arr.mapNotNull { it.asObjOrNull()?.toSession() },
+            rows = rows,
             webuiCount = o.int("webui_session_count"),
             cliCount = o.int("cli_session_count"),
         )
@@ -1324,12 +1328,15 @@ private fun JsonObject.toSession(): SessionRow? {
     val sid = str("session_id", "id")
     if (sid.isBlank()) return null
     val count = JsonText.sessionCount(intOrNull("messages"), intOrNull("message_count"))
+    // Server sets is_cli_session authoritatively; fall back to desktop _isCliSession() tag logic.
+    val srcRaw = str("session_source").ifBlank { str("raw_source", "source_tag", "source", "source_label") }.lowercase()
+    val isCli = bool("is_cli_session") || srcRaw == "cli" || srcRaw == "tui" || srcRaw == "acp"
     return SessionRow(
         sid = sid,
         title = str("title"),
         preview = str("preview", "snippet", "last_message"),
         msgCount = count,
-        source = str("source"),
+        source = if (isCli) "cli" else "",
         model = str("model"),
         pinned = bool("pinned"),
         archived = bool("archived"),

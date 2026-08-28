@@ -135,7 +135,10 @@ final class APIClient {
             row.preview = first(d, "preview", "snippet", "last_message")
             row.messages = intOpt(d, "messages")
             row.message_count = intOpt(d, "message_count")
-            row.source = first(d, "source")
+            // Server sets is_cli_session authoritatively; fall back to desktop _isCliSession() tags.
+            let srcRaw = (first(d, "session_source") ?? first(d, "raw_source") ?? first(d, "source_tag") ?? first(d, "source") ?? first(d, "source_label") ?? "").lowercased()
+            let isCli = ((d["is_cli_session"] as? Bool) ?? false) || ["cli", "tui", "acp"].contains(srcRaw)
+            row.source = isCli ? "cli" : ""
             row.updated_at = first(d, "updated_at")
             row.model = first(d, "model")
             if let b = d["pinned"] as? Bool { row.pinned = b }
@@ -143,7 +146,9 @@ final class APIClient {
             row.projectId = (d["project_id"] as? String) ?? ""
             return row
         }
-        return SessionsResult(rows: rows, webuiCount: webuiCount, cliCount: cliCount)
+        // The server may ignore ?source= and return everything; filter client-side like desktop.
+        let filtered = source == "cli" ? rows.filter { $0.source == "cli" } : rows.filter { $0.source != "cli" }
+        return SessionsResult(rows: filtered, webuiCount: webuiCount, cliCount: cliCount)
     }
 
     func loadSession(id: String, full: Bool = false) async throws -> SessionLoad {
