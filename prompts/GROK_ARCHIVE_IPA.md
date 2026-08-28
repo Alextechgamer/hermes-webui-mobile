@@ -1,16 +1,16 @@
-# Grok on Mac — archive IPA onto the existing v0.9.14 tag
+# Grok on Mac — archive IPA onto the existing v0.9.15 tag
 
 Paste everything below the line into Grok on the Apple Silicon Mac.
 
 ---
 
-You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.14`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
+You are on Apple Silicon macOS with Xcode. Your only job is to archive the **native SwiftUI** Hermes WebUI app and **attach the IPA to the existing GitHub release `v0.9.15`**. Linux already shipped the APK. You cannot compile this on Linux; do not try to rebuild Android.
 
 Repo: https://github.com/Alextechgamer/hermes-webui-mobile
-Tag already exists: `v0.9.14` on `main`. Release already has `hermes-webui-0.9.14-debug.apk`.
+Tag already exists: `v0.9.15` on `main`. Release already has `hermes-webui-0.9.15-debug.apk`.
 **Do not retag. Do not delete or replace the APK. Do not create a new release. Do not bump the version. Do not commit unless you must fix a local signing file that is gitignored.**
 
-**Do not touch `v0.9.12` or `v0.9.13`.** v0.9.12 already has an IPA. v0.9.13 does not compile (`TasksPane` missing) — do not archive that tag.
+**Do not touch `v0.9.12`–`v0.9.14`.** v0.9.12 already has an IPA. v0.9.13 does not compile (`TasksPane` missing) — do not archive that tag.
 
 This release restores `TasksPane` that 0.9.13 accidentally dropped from `PanelViews.swift` (RootView still called it). Kanban from 0.9.13 is kept: board switcher, search, filters, add/complete/archive, card detail. Official Dashboard (`:9119`) is unchanged.
 
@@ -62,14 +62,14 @@ If export fails on signing, stop and say what Xcode printed. Do not fake an IPA.
 
 ```bash
 gh auth status
-gh release view v0.9.14
-gh release upload v0.9.14 hermes-webui-0.9.14.ipa
+gh release view v0.9.15
+gh release upload v0.9.15 hermes-webui-0.9.14.ipa
 ```
 
 Use the real path to the IPA. **Never** `--clobber` the APK. If `hermes-webui-0.9.14.ipa` is already on the release, stop and report.
 
 ```bash
-gh release view v0.9.14 --json assets --jq '.assets[] | {name,size}'
+gh release view v0.9.15 --json assets --jq '.assets[] | {name,size}'
 ```
 
-You should see both `hermes-webui-0.9.14-debug.apk` and `hermes-webui-0.9.14.ipa`. Reply with the release URL and both asset names + sizes. Done.
+You should see both `hermes-webui-0.9.15-debug.apk` and `hermes-webui-0.9.14.ipa`. Reply with the release URL and both asset names + sizes. Done.
