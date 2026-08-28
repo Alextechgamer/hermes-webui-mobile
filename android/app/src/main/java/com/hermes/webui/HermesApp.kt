@@ -357,7 +357,6 @@ fun PanelHost(vm: AppVm) {
         Panel.Terminal -> TerminalPane(vm)
         Panel.Insights -> DashboardPane(vm)
         Panel.Logs -> LogsPane(vm)
-        Panel.Dashboard -> OfficialDashPane(vm)
         Panel.Settings -> SettingsPane(vm)
     }
 }

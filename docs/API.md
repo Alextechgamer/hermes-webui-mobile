@@ -57,7 +57,6 @@ Auth is cookie + CSRF. No bearer token.
 |---|---|---|
 | Tasks | `/api/crons` `{jobs}` | `/api/crons/{run,pause,resume}` `{job_id}` |
 | Kanban | `/api/kanban/board` `{columns:[{name,tasks}]}` | PATCH `/api/kanban/tasks/<id>` `{status}` |
-| Official Dashboard | `:9119` `GET /api/status`, `GET /api/sessions`, `POST /auth/password-login`, `POST /api/auth/ws-ticket`, WS `/api/ws` (`session.create` / `session.resume` / `prompt.submit`), `/api/plugins/kanban/*` | same |
 | Skills | `/api/skills` `{skills:[{name,description,category,disabled}]}` | `/api/skills/toggle` `{name,enabled}` |
 | Memory | `/api/memory` `{memory,user,soul,project_context}` | `/api/memory/write` `{section,content}` |
 | Spaces | `/api/workspaces` `{workspaces,last}` | — |
@@ -67,7 +66,6 @@ Auth is cookie + CSRF. No bearer token.
 | Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
-| Dashboard | same Console as Insights; not a rail item | — |
 | Settings | `/api/settings` grouped as Conversation / Appearance / Preferences / System; `/api/providers`; `/api/plugins`; `/api/extensions/status` | `POST /api/settings`, `POST /api/providers` `{provider,api_key}` |
 
 ## Files / terminal / voice

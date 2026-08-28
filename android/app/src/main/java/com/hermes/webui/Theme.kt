@@ -12,7 +12,6 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Layers
@@ -76,7 +75,6 @@ fun Panel.icon(): ImageVector = when (this) {
     Panel.Files -> Icons.Outlined.Description
     Panel.Terminal -> Icons.Outlined.Terminal
     Panel.Logs -> Icons.Outlined.Description
-    Panel.Dashboard -> Icons.Outlined.Dashboard
     Panel.Settings -> Icons.Outlined.Settings
 }
 

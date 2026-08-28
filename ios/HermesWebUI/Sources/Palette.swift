@@ -83,7 +83,6 @@ extension Panel {
         case .files: return "doc"
         case .terminal: return "terminal"
         case .logs: return "doc.text"
-        case .dashboard: return "square.grid.2x2"
         case .settings: return "gearshape"
         }
     }

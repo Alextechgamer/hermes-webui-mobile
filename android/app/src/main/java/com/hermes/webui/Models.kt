@@ -11,7 +11,6 @@ enum class Panel(val label: String, val inRail: Boolean = true) {
     Todos("Todos"),
     Insights("Insights"),
     Logs("Logs"),
-    Dashboard("Dashboard"),
     Settings("Settings"),
     Files("Files", inRail = false),
     Terminal("Terminal", inRail = false),

@@ -40,7 +40,7 @@ the migration row.
 ## Sessions / drawer
 
 - [ ] **Rail order** — Chat · Tasks · Kanban · Skills · Memory · Spaces ·
-  Profiles · Todos · Insights · Logs · **Dashboard** · Settings. Files and
+  Profiles · Todos · Insights · Logs · Settings. Files and
   Terminal stay off the rail (composer chips). Kanban on iOS has the same
   board switcher / search / assignee filters / add / complete / archive as
   Android — not tap-to-advance columns.

@@ -273,8 +273,6 @@ final class AppStore: ObservableObject {
             case .insights:
                 await loadConsole()
             case .logs: logLines = try await c.logs(file: logFile)
-            case .dashboard:
-                await loadConsole()
             case .settings:
                 settingsItems = try await c.settings()
                 settingEdits = [:]
@@ -856,7 +854,7 @@ final class AppStore: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard let self, let c = self.client, self.loggedIn else { continue }
-                if self.panel == .dashboard || self.panel == .insights { await self.loadConsole() }
+                if self.panel == .insights { await self.loadConsole() }
                 guard !self.currentSid.isEmpty else { continue }
                 let a = await c.approval(sid: self.currentSid)
                 let q = await c.clarify(sid: self.currentSid)
