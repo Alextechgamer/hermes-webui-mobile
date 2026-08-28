@@ -336,7 +336,10 @@ struct DashboardPane: View {
                 HStack {
                     Circle().fill(Color(hex: ConsoleFmt.mdot[i % ConsoleFmt.mdot.count])).frame(width: 8, height: 8)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(m.model).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.text)
+                        HStack(spacing: 5) {
+                            Text(m.model).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.text)
+                            if m.unpriced { noPriceBadge }
+                        }
                         Text(m.provider).font(.system(size: 11)).foregroundColor(Palette.muted)
                     }
                     Spacer()
@@ -496,7 +499,10 @@ struct DetailUsageSheet: View {
         HStack {
             Circle().fill(Color(hex: ConsoleFmt.mdot[index % ConsoleFmt.mdot.count])).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
-                Text(m.model).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.text)
+                HStack(spacing: 5) {
+                    Text(m.model).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.text)
+                    if m.unpriced { noPriceBadge }
+                }
                 Text(m.provider).font(.system(size: 11)).foregroundColor(Palette.muted)
             }
             Spacer()
@@ -577,4 +583,13 @@ extension Color {
             blue: Double(v & 0xFF) / 255
         )
     }
+}
+
+/// Muted "no price" chip for models with real tokens but no public rate
+/// (desktop console parity, 27 Aug 2026). Shared by DashboardPane + DetailUsageSheet.
+fileprivate var noPriceBadge: some View {
+    Text("no price")
+        .font(.system(size: 9)).foregroundColor(Palette.muted)
+        .padding(.horizontal, 4).padding(.vertical, 1)
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.muted.opacity(0.4), lineWidth: 1))
 }

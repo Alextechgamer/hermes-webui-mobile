@@ -132,10 +132,12 @@ struct ConsoleModel: Codable, Identifiable {
     var requests: Int64 = 0
     var tokens: Int64 = 0
     var est_cost: Double = 0
+    /// Desktop 27 Aug 2026: tokens burned but no public rate (OAuth routes etc.).
+    var unpriced: Bool = false
     var share_pct: Double = 0
     var id: String { model + provider }
 
-    enum CodingKeys: String, CodingKey { case model, provider, requests, tokens, est_cost, share_pct }
+    enum CodingKeys: String, CodingKey { case model, provider, requests, tokens, est_cost, unpriced, share_pct }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -144,6 +146,7 @@ struct ConsoleModel: Codable, Identifiable {
         requests = (try? c.decode(Int64.self, forKey: .requests)) ?? 0
         tokens = (try? c.decode(Int64.self, forKey: .tokens)) ?? 0
         est_cost = (try? c.decode(Double.self, forKey: .est_cost)) ?? 0
+        unpriced = (try? c.decode(Bool.self, forKey: .unpriced)) ?? false
         share_pct = (try? c.decode(Double.self, forKey: .share_pct)) ?? 0
     }
 }

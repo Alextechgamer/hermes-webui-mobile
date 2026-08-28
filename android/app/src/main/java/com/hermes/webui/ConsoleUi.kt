@@ -356,7 +356,13 @@ fun DashboardPane(vm: AppVm) {
                         )
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(m.model, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(m.model, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                if (m.unpriced) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Badge("")
+                                }
+                            }
                             Text(m.provider, color = Wui.Muted, fontSize = 11.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
@@ -495,7 +501,13 @@ private fun DetailOverlay(u: ConsoleUsage, onClose: () -> Unit) {
                     )
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(m.model, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(m.model, color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            if (m.unpriced) {
+                                Spacer(Modifier.width(6.dp))
+                                Badge("")
+                            }
+                        }
                         Text(m.provider, color = Wui.Muted, fontSize = 11.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {

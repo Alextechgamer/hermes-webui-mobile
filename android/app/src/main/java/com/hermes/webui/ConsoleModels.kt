@@ -99,6 +99,8 @@ data class ConsoleModel(
     val requests: Long = 0,
     val tokens: Long = 0,
     val est_cost: Double = 0.0,
+    /** Desktop 27 Aug 2026: tokens burned but no public rate (OAuth routes etc.). */
+    val unpriced: Boolean = false,
     val share_pct: Double = 0.0,
 )
 
