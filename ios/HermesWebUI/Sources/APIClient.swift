@@ -910,6 +910,97 @@ final class APIClient {
         _ = try? await postJSON("/api/file/save", body: ["session_id": sid, "path": path, "content": content])
     }
 
+    func createFile(sid: String, path: String) async {
+        _ = try? await postJSON("/api/file/create", body: ["session_id": sid, "path": path, "content": ""])
+    }
+
+    func createDir(sid: String, path: String) async {
+        _ = try? await postJSON("/api/file/create-dir", body: ["session_id": sid, "path": path])
+    }
+
+    func deleteFile(sid: String, path: String) async {
+        _ = try? await postJSON("/api/file/delete", body: ["session_id": sid, "path": path, "recursive": true])
+    }
+
+    func renameFile(sid: String, path: String, newName: String) async {
+        _ = try? await postJSON("/api/file/rename", body: ["session_id": sid, "path": path, "new_name": newName])
+    }
+
+    func retrySession(id: String) async {
+        _ = try? await postJSON("/api/session/retry", body: ["session_id": id])
+    }
+
+    func undoSession(id: String) async {
+        _ = try? await postJSON("/api/session/undo", body: ["session_id": id])
+    }
+
+    func regenerateTitle(id: String) async -> String {
+        guard let data = try? await postJSON("/api/session/title/regenerate", body: ["session_id": id]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        if let t = obj["title"] as? String, !t.isEmpty { return t }
+        if let s = obj["session"] as? [String: Any] { return (s["title"] as? String) ?? "" }
+        return ""
+    }
+
+    func yoloStatus(id: String) async -> Bool {
+        guard let o = try? await dict("/api/session/yolo?session_id=\(q(id))") else { return false }
+        return (o["yolo_enabled"] as? Bool) ?? false
+    }
+
+    func setYolo(id: String, enabled: Bool) async -> Bool {
+        guard let data = try? await postJSON("/api/session/yolo", body: ["session_id": id, "enabled": enabled]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return enabled }
+        return (obj["yolo_enabled"] as? Bool) ?? enabled
+    }
+
+    func commands() async -> [SlashCommand] {
+        guard let o = try? await dict("/api/commands") else { return [] }
+        return (o["commands"] as? [[String: Any]] ?? []).compactMap { c in
+            let name = (c["name"] as? String) ?? ""
+            guard !name.isEmpty else { return nil }
+            return SlashCommand(
+                name: name,
+                description: (c["description"] as? String) ?? "",
+                category: (c["category"] as? String) ?? "",
+                argsHint: (c["args_hint"] as? String) ?? "",
+                cliOnly: (c["cli_only"] as? Bool) ?? false
+            )
+        }
+    }
+
+    func execCommand(_ command: String) async -> String {
+        guard let data = try? await postJSON("/api/commands/exec", body: ["command": command]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "" }
+        return (obj["output"] as? String) ?? (obj["error"] as? String) ?? (obj["message"] as? String) ?? ""
+    }
+
+    func logout() async {
+        _ = try? await postJSON("/api/auth/logout", body: [:])
+    }
+
+    func updatesCheck() async -> UpdatesStatus {
+        guard let data = try? await postJSON("/api/updates/check", body: ["force": true]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return UpdatesStatus() }
+        func target(_ key: String) -> UpdateTarget {
+            let t = obj[key] as? [String: Any] ?? [:]
+            return UpdateTarget(
+                name: (t["name"] as? String) ?? key,
+                behind: (t["behind"] as? Int) ?? 0,
+                current: (t["current_version"] as? String) ?? (t["current_sha"] as? String) ?? "",
+                latest: (t["latest_version"] as? String) ?? (t["latest_sha"] as? String) ?? "",
+                dirty: (t["dirty"] as? Bool) ?? false
+            )
+        }
+        return UpdatesStatus(webui: target("webui"), agent: target("agent"), checkedAt: "\(obj["checked_at"] ?? "")")
+    }
+
+    func updatesApply(target: String) async -> String {
+        guard let data = try? await postJSON("/api/updates/apply", body: ["target": target]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "apply failed" }
+        if (obj["ok"] as? Bool) == true { return "ok" }
+        return (obj["error"] as? String) ?? (obj["message"] as? String) ?? "apply failed"
+    }
+
     func startTerminal(sid: String) async throws {
         let o = try await dictPost("/api/terminal/start", ["session_id": sid, "rows": 24, "cols": 80])
         if let err = o["error"] as? String, !err.isEmpty { throw URLError(.cannotParseResponse) }

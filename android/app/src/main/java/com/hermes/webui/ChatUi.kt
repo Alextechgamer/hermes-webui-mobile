@@ -106,6 +106,15 @@ fun ChatPane(vm: AppVm) {
     }
     Column(Modifier.fillMaxSize().background(Wui.Bg).imePadding()) {
         ErrLine(vm)
+        vm.commandOutput.value?.let { out ->
+            Text(
+                out.take(800),
+                color = Wui.Accent,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(12.dp).clickable { vm.commandOutput.value = null },
+            )
+        }
         vm.approval.value?.let { ApprovalBanner(it, vm::approve) }
         vm.clarify.value?.let { ClarifyBanner(it, vm::answerClarify) }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -431,6 +440,21 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                 showReasoning = false
             }
         }
+        val slashHits = vm.matchingCommands(draft)
+        if (slashHits.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(WuiShapeMd).background(Wui.Surface).border(1.dp, Wui.Border, WuiShapeMd).padding(6.dp),
+            ) {
+                slashHits.forEach { cmd ->
+                    Column(
+                        Modifier.fillMaxWidth().clickable { onDraft("/${cmd.name} ") }.padding(8.dp, 6.dp),
+                    ) {
+                        Text("/${cmd.name}" + cmd.argsHint.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty(), color = Wui.Accent, fontSize = 13.sp)
+                        if (cmd.description.isNotBlank()) Text(cmd.description, color = Wui.Muted, fontSize = 11.sp, maxLines = 2)
+                    }
+                }
+            }
+        }
         if (vm.pendingAttach.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 vm.pendingAttach.forEach { a ->
@@ -498,6 +522,7 @@ private fun Composer(vm: AppVm, draft: String, onDraft: (String) -> Unit, onSend
                     showPrompts = false
                     showProfiles = false
                 }
+                FooterChip(Icons.Outlined.Build, if (vm.yoloEnabled.value) "YOLO on" else "YOLO") { vm.toggleYolo() }
                 Spacer(Modifier.width(8.dp))
                 if (vm.busy.value) {
                     Text("STEER", color = Wui.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)

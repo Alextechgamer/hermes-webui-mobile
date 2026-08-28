@@ -452,6 +452,9 @@ struct DrawerBody: View {
                         Button("Duplicate") { Task { await store.duplicateSession(row.sid) } }
                         Button("Share link") { Task { await store.shareSession(row.sid) } }
                         Button("Clear messages") { Task { await store.clearSession(row.sid) } }
+                        Button("Retry last") { Task { await store.retryLast() } }
+                        Button("Undo last") { Task { await store.undoLast() } }
+                        Button("Regenerate title") { Task { await store.regenerateTitle() } }
                         ForEach(store.projects) { p in
                             Button("Move to \(p.name)") { Task { await store.moveSession(row.sid, p.id) } }
                         }

@@ -282,6 +282,40 @@ struct SystemSettings: View {
                 Text("Instance access and Hermes Console.")
                     .font(.system(size: 12)).foregroundColor(Palette.muted)
                     .padding(.bottom, 4)
+                Button { Task { await store.signOut() } } label: {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Sign out").fontWeight(.semibold).foregroundColor(Palette.text)
+                            Text("End this WebUI cookie session. Password stays saved.")
+                                .font(.system(size: 12)).foregroundColor(Palette.muted)
+                        }
+                        Spacer()
+                        Text("Out").foregroundColor(Palette.danger)
+                    }
+                    .padding(14)
+                    .background(Palette.surface)
+                    .cornerRadius(12)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Updates").fontWeight(.semibold).foregroundColor(Palette.text)
+                    Text("WebUI \(store.updates.webui.current.isEmpty ? "—" : store.updates.webui.current) · \(store.updates.webui.behind > 0 ? "\(store.updates.webui.behind) behind" : "up to date")\(store.updates.webui.dirty ? " (dirty)" : "")")
+                        .font(.system(size: 12)).foregroundColor(Palette.muted)
+                    Text("Agent \(store.updates.agent.current.isEmpty ? "—" : store.updates.agent.current) · \(store.updates.agent.behind > 0 ? "\(store.updates.agent.behind) behind" : "up to date")\(store.updates.agent.dirty ? " (dirty)" : "")")
+                        .font(.system(size: 12)).foregroundColor(Palette.muted)
+                    HStack(spacing: 12) {
+                        Button(store.updatesBusy ? "Checking…" : "Check now") { Task { await store.checkUpdates() } }
+                        if store.updates.webui.behind > 0 {
+                            Button("Update WebUI") { Task { await store.applyUpdate("webui") } }
+                        }
+                        if store.updates.agent.behind > 0 {
+                            Button("Update agent") { Task { await store.applyUpdate("agent") } }
+                        }
+                    }.font(.caption).foregroundColor(Palette.accent)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.surface)
+                .cornerRadius(12)
                 Button { Task { await store.go(.console) } } label: {
                     HStack {
                         VStack(alignment: .leading) {

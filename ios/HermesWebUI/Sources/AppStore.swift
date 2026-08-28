@@ -18,6 +18,11 @@ final class AppStore: ObservableObject {
     @Published var kanbanSelected: Set<String> = []
     @Published var kanbanBulkStatus = "done"
     @Published var settingsQuery = ""
+    @Published var commands: [SlashCommand] = []
+    @Published var yoloEnabled = false
+    @Published var commandOutput: String?
+    @Published var updates = UpdatesStatus()
+    @Published var updatesBusy = false
     @Published var messages: [ChatMessage] = []
     @Published var liveText: String = ""
     @Published var title: String = "Hermes"
@@ -143,6 +148,7 @@ final class AppStore: ObservableObject {
                 try await c.refreshCSRF()
                 await loadSessions()
                 await loadModels()
+                await loadCommands()
                 startPoll()
                 listenForSessionList()
                 let last = UserDefaults.standard.string(forKey: "lastSid") ?? ""
@@ -172,6 +178,7 @@ final class AppStore: ObservableObject {
             ready = true
             await loadSessions()
             await loadModels()
+            await loadCommands()
             startPoll()
         } catch {
             self.error = "Login failed"
@@ -324,6 +331,7 @@ final class AppStore: ObservableObject {
         do {
             let load = try await c.loadSession(id: id)
             apply(load)
+            await refreshYolo()
         } catch { self.error = error.localizedDescription }
     }
 
@@ -354,6 +362,10 @@ final class AppStore: ObservableObject {
     func send(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = pendingAttach.map(\.path)
+        if trimmed.hasPrefix("/") && files.isEmpty && isKnownSlash(trimmed) {
+            await runSlash(trimmed)
+            return
+        }
         pendingAttach.removeAll()
         if trimmed.isEmpty && files.isEmpty { return }
         let shown = trimmed.isEmpty ? files.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ") : trimmed
@@ -705,6 +717,135 @@ final class AppStore: ObservableObject {
     func saveFile() async {
         guard let c = client, let path = fileDoc?.path else { return }
         await c.saveFile(sid: currentSid, path: path, content: fileDraft)
+    }
+
+    private func joinFs(_ name: String) -> String {
+        let dir = fsPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if dir.isEmpty || dir == "." { return name.trimmingCharacters(in: .whitespaces) }
+        return dir + "/" + name.trimmingCharacters(in: .whitespaces)
+    }
+
+    func createFile(_ name: String) async {
+        guard let c = client else { return }
+        let path = joinFs(name)
+        guard !path.isEmpty else { return }
+        await c.createFile(sid: currentSid, path: path)
+        await loadFiles(fsPath)
+        await openFile(path)
+    }
+
+    func createDir(_ name: String) async {
+        guard let c = client else { return }
+        let path = joinFs(name)
+        guard !path.isEmpty else { return }
+        await c.createDir(sid: currentSid, path: path)
+        await loadFiles(fsPath)
+    }
+
+    func deleteFs(_ entry: FsEntry) async {
+        guard let c = client else { return }
+        await c.deleteFile(sid: currentSid, path: entry.path)
+        if fileDoc?.path == entry.path { fileDoc = nil }
+        await loadFiles(fsPath)
+    }
+
+    func renameFs(_ entry: FsEntry, _ newName: String) async {
+        guard let c = client, !newName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        await c.renameFile(sid: currentSid, path: entry.path, newName: newName.trimmingCharacters(in: .whitespaces))
+        await loadFiles(fsPath)
+    }
+
+    func loadCommands() async {
+        commands = await client?.commands().filter { !$0.cliOnly } ?? []
+    }
+
+    private func slashName(_ text: String) -> String {
+        String(text.trimmingCharacters(in: .whitespaces).dropFirst()).split(separator: " ").first.map(String.init)?.lowercased() ?? ""
+    }
+
+    func isKnownSlash(_ text: String) -> Bool {
+        let name = slashName(text)
+        return !name.isEmpty && commands.contains { $0.name.lowercased() == name }
+    }
+
+    func matchingCommands(_ draft: String) -> [SlashCommand] {
+        guard draft.hasPrefix("/") else { return [] }
+        let q = String(draft.dropFirst()).split(separator: " ").first.map(String.init)?.lowercased() ?? ""
+        return commands.filter { $0.name.lowercased().hasPrefix(q) }.prefix(12).map { $0 }
+    }
+
+    func runSlash(_ text: String) async {
+        let name = slashName(text)
+        let rest = text.trimmingCharacters(in: .whitespaces).drop(while: { $0 != " " }).trimmingCharacters(in: .whitespaces)
+        switch name {
+        case "new", "reset": await newChat()
+        case "retry": await retryLast()
+        case "undo": await undoLast()
+        case "yolo": await toggleYolo()
+        case "title":
+            if rest.isEmpty { await regenerateTitle() } else { await execSlash(text) }
+        default: await execSlash(text)
+        }
+    }
+
+    func execSlash(_ text: String) async {
+        let out = await client?.execCommand(text.trimmingCharacters(in: .whitespaces)) ?? ""
+        commandOutput = out.isEmpty ? "(no output)" : out
+        if !currentSid.isEmpty { await openSid(currentSid, keepPanel: true) }
+        await loadSessions()
+    }
+
+    func retryLast() async {
+        guard !currentSid.isEmpty else { return }
+        await client?.retrySession(id: currentSid)
+        await openSid(currentSid, keepPanel: true)
+    }
+
+    func undoLast() async {
+        guard !currentSid.isEmpty else { return }
+        await client?.undoSession(id: currentSid)
+        await openSid(currentSid, keepPanel: true)
+    }
+
+    func regenerateTitle() async {
+        guard !currentSid.isEmpty else { return }
+        let t = await client?.regenerateTitle(id: currentSid) ?? ""
+        if !t.isEmpty { title = t }
+        await loadSessions()
+    }
+
+    func refreshYolo() async {
+        guard !currentSid.isEmpty else { return }
+        yoloEnabled = await client?.yoloStatus(id: currentSid) ?? false
+    }
+
+    func toggleYolo() async {
+        guard !currentSid.isEmpty else { return }
+        yoloEnabled = await client?.setYolo(id: currentSid, enabled: !yoloEnabled) ?? !yoloEnabled
+    }
+
+    func signOut() async {
+        await client?.logout()
+        needsLogin = true
+        loggedIn = false
+        ready = false
+        messages = []
+        liveText = ""
+        sessions = []
+    }
+
+    func checkUpdates() async {
+        updatesBusy = true
+        updates = await client?.updatesCheck() ?? UpdatesStatus()
+        updatesBusy = false
+    }
+
+    func applyUpdate(_ target: String) async {
+        updatesBusy = true
+        let msg = await client?.updatesApply(target: target) ?? "apply failed"
+        commandOutput = msg == "ok" ? "Update \(target) started" : msg
+        updates = await client?.updatesCheck() ?? updates
+        updatesBusy = false
     }
 
     func startTerm() async {

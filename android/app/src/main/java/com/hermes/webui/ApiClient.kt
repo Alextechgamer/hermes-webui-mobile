@@ -930,6 +930,90 @@ class ApiClient(base: String, prefs: Prefs) {
         postRaw("/api/file/save", """{"session_id":${q(sid)},"path":${q(path)},"content":${q(content)}}""")
     }
 
+    fun createFile(sid: String, path: String) {
+        postRaw("/api/file/create", """{"session_id":${q(sid)},"path":${q(path)},"content":""}""")
+    }
+
+    fun createDir(sid: String, path: String) {
+        postRaw("/api/file/create-dir", """{"session_id":${q(sid)},"path":${q(path)}}""")
+    }
+
+    fun deleteFile(sid: String, path: String, recursive: Boolean = true) {
+        postRaw("/api/file/delete", """{"session_id":${q(sid)},"path":${q(path)},"recursive":$recursive}""")
+    }
+
+    fun renameFile(sid: String, path: String, newName: String) {
+        postRaw("/api/file/rename", """{"session_id":${q(sid)},"path":${q(path)},"new_name":${q(newName)}}""")
+    }
+
+    fun retrySession(sid: String) {
+        postRaw("/api/session/retry", """{"session_id":${q(sid)}}""")
+    }
+
+    fun undoSession(sid: String) {
+        postRaw("/api/session/undo", """{"session_id":${q(sid)}}""")
+    }
+
+    fun regenerateTitle(sid: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/session/title/regenerate", """{"session_id":${q(sid)}}""")).asObj()
+        return el.str("title").ifBlank { el.obj("session")?.str("title").orEmpty() }
+    }
+
+    fun yoloStatus(sid: String): Boolean {
+        val el = parse("/api/session/yolo?session_id=${enc(sid)}").asObj()
+        return el.bool("yolo_enabled")
+    }
+
+    fun setYolo(sid: String, enabled: Boolean): Boolean {
+        val el = json.parseToJsonElement(postRaw("/api/session/yolo", """{"session_id":${q(sid)},"enabled":$enabled}""")).asObj()
+        return if ("yolo_enabled" in el) el.bool("yolo_enabled") else enabled
+    }
+
+    fun commands(): List<SlashCommand> {
+        val o = runCatching { parse("/api/commands").asObj() }.getOrNull() ?: return emptyList()
+        return (o.arr("commands") ?: JsonArray(emptyList())).mapNotNull { el ->
+            val c = el.asObjOrNull() ?: return@mapNotNull null
+            val name = c.str("name")
+            if (name.isBlank()) return@mapNotNull null
+            SlashCommand(
+                name = name,
+                description = c.str("description"),
+                category = c.str("category"),
+                argsHint = c.str("args_hint"),
+                cliOnly = c.bool("cli_only"),
+            )
+        }
+    }
+
+    fun execCommand(command: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/commands/exec", """{"command":${q(command)}}""")).asObj()
+        return el.str("output").ifBlank { el.str("error", "message") }
+    }
+
+    fun logout() {
+        runCatching { postRaw("/api/auth/logout", "{}") }
+    }
+
+    fun updatesCheck(): UpdatesStatus {
+        val el = json.parseToJsonElement(postRaw("/api/updates/check", """{"force":true}""")).asObj()
+        fun target(key: String): UpdateTarget {
+            val t = el.obj(key) ?: return UpdateTarget(key)
+            return UpdateTarget(
+                name = t.str("name").ifBlank { key },
+                behind = t.int("behind"),
+                current = t.str("current_version", "current_sha"),
+                latest = t.str("latest_version", "latest_sha"),
+                dirty = t.bool("dirty"),
+            )
+        }
+        return UpdatesStatus(webui = target("webui"), agent = target("agent"), checkedAt = el.str("checked_at"))
+    }
+
+    fun updatesApply(target: String): String {
+        val el = json.parseToJsonElement(postRaw("/api/updates/apply", """{"target":${q(target)}}""")).asObj()
+        return if (el.bool("ok") || el.str("ok") == "true") "ok" else el.str("error", "message").ifBlank { "apply failed" }
+    }
+
     fun startTerminal(sid: String, rows: Int = 24, cols: Int = 80): String {
         val o = json.parseToJsonElement(
             postRaw("/api/terminal/start", """{"session_id":${q(sid)},"rows":$rows,"cols":$cols}"""),

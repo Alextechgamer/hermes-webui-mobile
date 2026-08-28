@@ -302,3 +302,25 @@ data class FileDoc(
     val size: Int = 0,
     val lines: Int = 0,
 )
+
+data class SlashCommand(
+    val name: String,
+    val description: String,
+    val category: String = "",
+    val argsHint: String = "",
+    val cliOnly: Boolean = false,
+)
+
+data class UpdateTarget(
+    val name: String,
+    val behind: Int = 0,
+    val current: String = "",
+    val latest: String = "",
+    val dirty: Boolean = false,
+)
+
+data class UpdatesStatus(
+    val webui: UpdateTarget = UpdateTarget("webui"),
+    val agent: UpdateTarget = UpdateTarget("agent"),
+    val checkedAt: String = "",
+)

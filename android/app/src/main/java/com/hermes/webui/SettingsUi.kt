@@ -238,6 +238,37 @@ private fun SystemSettings(vm: AppVm) {
         Text("System", color = Wui.Text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         Text("Instance access and Hermes Console.", color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
         Row(
+            Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).clickable { vm.signOut() }.padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Sign out", color = Wui.Text, fontWeight = FontWeight.SemiBold)
+                Text("End this WebUI cookie session. Password stays saved.", color = Wui.Muted, fontSize = 12.sp)
+            }
+            Text("Out", color = Wui.Danger)
+        }
+        Spacer(Modifier.height(8.dp))
+        Column(Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).padding(14.dp)) {
+            Text("Updates", color = Wui.Text, fontWeight = FontWeight.SemiBold)
+            val u = vm.updates.value
+            Text(
+                "WebUI ${u.webui.current.ifBlank { "—" }} · ${if (u.webui.behind > 0) "${u.webui.behind} behind" else "up to date"}" +
+                    (if (u.webui.dirty) " (dirty)" else ""),
+                color = Wui.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(
+                "Agent ${u.agent.current.ifBlank { "—" }} · ${if (u.agent.behind > 0) "${u.agent.behind} behind" else "up to date"}" +
+                    (if (u.agent.dirty) " (dirty)" else ""),
+                color = Wui.Muted, fontSize = 12.sp,
+            )
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (vm.updatesBusy.value) "Checking…" else "Check now", color = Wui.Accent, modifier = Modifier.clickable { vm.checkUpdates() })
+                if (u.webui.behind > 0) Text("Update WebUI", color = Wui.Accent, modifier = Modifier.clickable { vm.applyUpdate("webui") })
+                if (u.agent.behind > 0) Text("Update agent", color = Wui.Accent, modifier = Modifier.clickable { vm.applyUpdate("agent") })
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
             Modifier.fillMaxWidth().clip(WuiShapeMd).background(Wui.Surface).clickable { vm.go(Panel.Console) }.padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {

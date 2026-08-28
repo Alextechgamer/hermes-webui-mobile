@@ -66,7 +66,11 @@ Auth is cookie + CSRF. No bearer token.
 | Console (Settings → System) | Hermes Console `GET :8790/api/usage` + `GET/POST :8790/api/cost-config` | — |
 | Sessions extras | `GET /api/projects`; pin/archive/rename/duplicate/move/clear/share | `/api/session/{pin,archive,rename,duplicate,move,clear,delete}`, `/api/share/{create,revoke}`, `/api/projects/{create,delete,rename}` |
 | Kanban extras | boards list | `POST /api/kanban/boards` `{slug,name,switch}`, `POST /api/kanban/tasks/bulk` `{ids,status}` |
-| Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save` `{session_id,path,content}` |
+| Files | `/api/list?session_id=&path=` `{entries,workspace}` | `/api/file/save`, `/api/file/create` `{path,content}`, `/api/file/create-dir`, `/api/file/delete` `{path,recursive}`, `/api/file/rename` `{path,new_name}` |
+| Slash commands | `GET /api/commands` | `POST /api/commands/exec` `{command}`; retry/undo/yolo/title also have dedicated session endpoints |
+| Session turn extras | — | `/api/session/retry`, `/api/session/undo`, `/api/session/title/regenerate`, `GET/POST /api/session/yolo` |
+| Auth | `/api/auth/status`, `/api/auth/login` | `POST /api/auth/logout` |
+| Updates | `POST /api/updates/check` `{force}` | `POST /api/updates/apply` `{target}` |
 | Terminal | SSE `/api/terminal/output?session_id=` event `output` `{text}` | `/api/terminal/{start,input,close}` |
 | Logs | `/api/logs?file=agent&tail=200` `{lines}` | — |
 | Settings | `/api/settings` grouped as Conversation / Appearance / Preferences / System; `/api/providers`; `/api/plugins`; `/api/extensions/status` | `POST /api/settings`, `POST /api/providers` `{provider,api_key}` |

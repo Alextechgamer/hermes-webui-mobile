@@ -43,6 +43,11 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     val kanbanSelected = mutableStateListOf<String>()
     val kanbanBulkStatus = mutableStateOf("done")
     val settingsQuery = mutableStateOf("")
+    val commands = mutableStateListOf<SlashCommand>()
+    val yoloEnabled = mutableStateOf(false)
+    val commandOutput = mutableStateOf<String?>(null)
+    val updates = mutableStateOf(UpdatesStatus())
+    val updatesBusy = mutableStateOf(false)
     val bubbles = mutableStateListOf<ChatMsg>()
     val live = mutableStateOf("")
     val busy = mutableStateOf(false)
@@ -159,6 +164,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             refreshSessions()
             loadModels()
             startPoll()
+            loadCommands()
             attachListStream()
             if (prefs.lastSid.isNotBlank()) open(prefs.lastSid, keepPanel = true)
             voiceAvailable.value = withContext(Dispatchers.IO) { runCatching { c.transcribeAvailable() }.getOrDefault(false) }
@@ -180,6 +186,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
                 refreshSessions()
                 loadModels()
                 startPoll()
+                loadCommands()
             } catch (_: Exception) {
                 error.value = "Login failed"
             }
@@ -386,6 +393,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             try {
                 val load = withContext(Dispatchers.IO) { c.loadSession(id) }
                 applyLoad(load)
+                refreshYolo()
             } catch (e: Exception) { error.value = e.message }
         }
     }
@@ -527,10 +535,138 @@ class AppVm(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun loadCommands() {
+        val c = api ?: return
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { runCatching { c.commands() }.getOrDefault(emptyList()) }
+            commands.clear(); commands.addAll(list.filter { !it.cliOnly })
+        }
+    }
+
+    private fun slashName(text: String): String =
+        text.trim().removePrefix("/").substringBefore(" ").lowercase()
+
+    fun isKnownSlash(text: String): Boolean {
+        val name = slashName(text)
+        return name.isNotBlank() && commands.any { it.name.equals(name, true) }
+    }
+
+    fun matchingCommands(draft: String): List<SlashCommand> {
+        if (!draft.startsWith("/")) return emptyList()
+        val q = draft.removePrefix("/").substringBefore(" ").lowercase()
+        return commands.filter { it.name.startsWith(q) }.take(12)
+    }
+
+    fun runSlash(text: String) {
+        val name = slashName(text)
+        val rest = text.trim().removePrefix("/").substringAfter(" ", "").trim()
+        when (name) {
+            "new", "reset" -> newChat()
+            "retry" -> retryLast()
+            "undo" -> undoLast()
+            "yolo" -> toggleYolo()
+            "title" -> if (rest.isBlank()) regenerateTitle() else execSlash(text)
+            else -> execSlash(text)
+        }
+    }
+
+    fun execSlash(text: String) {
+        val c = api ?: return
+        viewModelScope.launch {
+            val out = withContext(Dispatchers.IO) { runCatching { c.execCommand(text.trim()) }.getOrElse { it.message.orEmpty() } }
+            commandOutput.value = out.ifBlank { "(no output)" }
+            if (sid.isNotBlank()) open(sid, keepPanel = true)
+            refreshSessions()
+        }
+    }
+
+    fun retryLast() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.retrySession(sid) } }
+            open(sid, keepPanel = true)
+        }
+    }
+
+    fun undoLast() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c.undoSession(sid) } }
+            open(sid, keepPanel = true)
+        }
+    }
+
+    fun regenerateTitle() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            val t = withContext(Dispatchers.IO) { runCatching { c.regenerateTitle(sid) }.getOrDefault("") }
+            if (t.isNotBlank()) title.value = t
+            refreshSessions()
+        }
+    }
+
+    fun refreshYolo() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            yoloEnabled.value = withContext(Dispatchers.IO) { runCatching { c.yoloStatus(sid) }.getOrDefault(false) }
+        }
+    }
+
+    fun toggleYolo() {
+        val c = api ?: return
+        if (sid.isBlank()) return
+        viewModelScope.launch {
+            val next = !yoloEnabled.value
+            yoloEnabled.value = withContext(Dispatchers.IO) { runCatching { c.setYolo(sid, next) }.getOrDefault(next) }
+        }
+    }
+
+    fun signOut() {
+        val c = api
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { c?.logout() } }
+            needsLogin.value = true
+            ready.value = false
+            bubbles.clear()
+            live.value = ""
+            sessions.clear()
+        }
+    }
+
+    fun checkUpdates() {
+        val c = api ?: return
+        updatesBusy.value = true
+        viewModelScope.launch {
+            try {
+                updates.value = withContext(Dispatchers.IO) { c.updatesCheck() }
+            } catch (e: Exception) { error.value = e.message }
+            updatesBusy.value = false
+        }
+    }
+
+    fun applyUpdate(target: String) {
+        val c = api ?: return
+        updatesBusy.value = true
+        viewModelScope.launch {
+            val msg = withContext(Dispatchers.IO) { runCatching { c.updatesApply(target) }.getOrElse { it.message.orEmpty() } }
+            commandOutput.value = if (msg == "ok") "Update $target started" else msg
+            runCatching { updates.value = withContext(Dispatchers.IO) { c.updatesCheck() } }
+            updatesBusy.value = false
+        }
+    }
+
     fun send(text: String) {
         val t = text.trim()
         val files = pendingAttach.map { it.path }
         if (t.isEmpty() && files.isEmpty()) return
+        if (t.startsWith("/") && files.isEmpty() && isKnownSlash(t)) {
+            runSlash(t)
+            return
+        }
         pendingAttach.clear()
         val shown = t.ifBlank { files.joinToString { it.substringAfterLast('/') } }
         if (busy.value) {
@@ -1192,6 +1328,58 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeFile() { fileDoc.value = null }
+
+    private fun joinFs(name: String): String {
+        val dir = fsPath.value.trim().trimEnd('/')
+        return if (dir.isBlank() || dir == ".") name.trim() else "$dir/${name.trim()}"
+    }
+
+    fun createFile(name: String) {
+        val c = api ?: return
+        val path = joinFs(name)
+        if (path.isBlank()) return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createFile(sid, path) }
+                loadFiles(fsPath.value)
+                openFile(path)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun createDir(name: String) {
+        val c = api ?: return
+        val path = joinFs(name)
+        if (path.isBlank()) return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.createDir(sid, path) }
+                loadFiles(fsPath.value)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun deleteFs(entry: FsEntry) {
+        val c = api ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.deleteFile(sid, entry.path, recursive = true) }
+                if (fileDoc.value?.path == entry.path) fileDoc.value = null
+                loadFiles(fsPath.value)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
+
+    fun renameFs(entry: FsEntry, newName: String) {
+        val c = api ?: return
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { c.renameFile(sid, entry.path, newName.trim()) }
+                loadFiles(fsPath.value)
+            } catch (e: Exception) { error.value = e.message }
+        }
+    }
 
     fun startTerm() {
         val c = api ?: return

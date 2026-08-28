@@ -19,6 +19,13 @@ struct ChatPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let out = store.commandOutput {
+                Text(String(out.prefix(800)))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(Palette.accent)
+                    .padding(12)
+                    .onTapGesture { store.commandOutput = nil }
+            }
             if let a = store.approval {
                 ApprovalBanner(a: a) { choice in Task { await store.approve(choice) } }
             }
@@ -201,6 +208,30 @@ struct ChatPane: View {
                     showReasoning = false
                 }
             }
+            let slashHits = store.matchingCommands(draft)
+            if !slashHits.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(slashHits) { cmd in
+                        Button {
+                            draft = "/\(cmd.name) "
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("/\(cmd.name)" + (cmd.argsHint.isEmpty ? "" : " \(cmd.argsHint)"))
+                                    .font(.system(size: 13)).foregroundColor(Palette.accent)
+                                if !cmd.description.isEmpty {
+                                    Text(cmd.description).font(.system(size: 11)).foregroundColor(Palette.muted).lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        }
+                    }
+                }
+                .background(Palette.surface)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.border))
+                .cornerRadius(10)
+                .padding(.horizontal, 12)
+            }
             if !store.pendingAttach.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -271,6 +302,9 @@ struct ChatPane: View {
                         }
                         FooterChip(symbol: "lightbulb", label: "Reason \(store.reasoning.label)") {
                             showReasoning.toggle(); showModels = false; showPrompts = false; showProfiles = false
+                        }
+                        FooterChip(symbol: "bolt", label: store.yoloEnabled ? "YOLO on" : "YOLO") {
+                            Task { await store.toggleYolo() }
                         }
                         Spacer(minLength: 8)
                         if store.busy {

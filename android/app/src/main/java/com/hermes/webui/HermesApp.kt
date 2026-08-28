@@ -452,6 +452,9 @@ private fun ConversationList(vm: AppVm, close: () -> Unit) {
                             "Duplicate" to { vm.duplicateSession(row.sid) },
                             "Share link" to { vm.shareSession(row.sid) },
                             "Clear messages" to { vm.clearSession(row.sid) },
+                            "Retry last" to { vm.retryLast() },
+                            "Undo last" to { vm.undoLast() },
+                            "Regenerate title" to { vm.regenerateTitle() },
                         ).forEach { (label, run) ->
                             Text(label, color = Wui.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp).clickable { run(); menuSid = null })
                         }

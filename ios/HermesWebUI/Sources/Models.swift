@@ -308,6 +308,29 @@ struct FileDoc {
     var lines: Int
 }
 
+struct SlashCommand: Identifiable {
+    var id: String { name }
+    var name: String
+    var description: String
+    var category: String = ""
+    var argsHint: String = ""
+    var cliOnly: Bool = false
+}
+
+struct UpdateTarget {
+    var name: String
+    var behind: Int = 0
+    var current: String = ""
+    var latest: String = ""
+    var dirty: Bool = false
+}
+
+struct UpdatesStatus {
+    var webui: UpdateTarget = UpdateTarget(name: "webui")
+    var agent: UpdateTarget = UpdateTarget(name: "agent")
+    var checkedAt: String = ""
+}
+
 struct PendingAttach: Identifiable, Hashable {
     var name: String
     var path: String
