@@ -50,6 +50,13 @@ struct RootView: View {
             if urlDraft.isEmpty { urlDraft = settings.webuiURL }
             if dashDraft.isEmpty { dashDraft = settings.dashboardURL }
         }
+        .onChange(of: store.needsLogin) { needs in
+            // Auto-login never copies Keychain into this field; refill it on Sign out.
+            if needs {
+                if password.isEmpty { password = settings.password }
+                if urlDraft.isEmpty { urlDraft = settings.webuiURL }
+            }
+        }
     }
 
     private var connect: some View {
