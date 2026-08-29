@@ -55,14 +55,27 @@ struct TasksPane: View {
                     }
                     Text([job.schedule, job.owner].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption).foregroundColor(Palette.muted)
-                    HStack {
+                    VStack(alignment: .leading, spacing: 2) {
                         if !job.lastStatus.isEmpty {
                             Text(job.lastStatus)
                                 .font(.caption)
                                 .foregroundColor(job.lastStatus.lowercased().contains("error") || job.lastStatus.lowercased().contains("fail") ? Palette.danger : Palette.ok)
+                                .lineLimit(1)
                         }
-                        if !job.lastRun.isEmpty { Text("last \(job.lastRun)").font(.caption).foregroundColor(Palette.muted) }
-                        if !job.nextRun.isEmpty { Text("next \(job.nextRun)").font(.caption).foregroundColor(Palette.muted) }
+                        if !job.lastRun.isEmpty {
+                            Text("last \(shortStamp(job.lastRun))")
+                                .font(.caption)
+                                .foregroundColor(Palette.muted)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        if !job.nextRun.isEmpty {
+                            Text("next \(shortStamp(job.nextRun))")
+                                .font(.caption)
+                                .foregroundColor(Palette.muted)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
                     }
                     if !job.readOnly {
                         HStack {
@@ -109,6 +122,14 @@ struct TasksPane: View {
         }
         .scrollContentBackground(.hidden).background(Palette.bg)
     }
+}
+
+/// Compact ISO-8601 timestamps so cron rows don't wrap mid-offset.
+private func shortStamp(_ s: String) -> String {
+    let t = s.replacingOccurrences(of: "T", with: " ")
+    if let dot = t.firstIndex(of: ".") { return String(t[..<dot]) }
+    if t.count > 19 { return String(t.prefix(19)) }
+    return t
 }
 
 struct KanbanPane: View {
@@ -486,6 +507,11 @@ struct MemoryPane: View {
         }
         .onAppear { draft = text(for: tab) }
         .onChange(of: tab) { _ in draft = text(for: tab) }
+        // loadPanel is async; onAppear often runs while memory is still empty.
+        .onChange(of: store.memory.memory) { _ in if tab == "memory" { draft = store.memory.memory } }
+        .onChange(of: store.memory.user) { _ in if tab == "user" { draft = store.memory.user } }
+        .onChange(of: store.memory.soul) { _ in if tab == "soul" { draft = store.memory.soul } }
+        .onChange(of: store.memory.project) { _ in if tab == "project" { draft = store.memory.project } }
     }
 
     private func text(for tab: String) -> String {
