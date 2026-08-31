@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Hermes Agent (upstream)
+    url: https://github.com/NousResearch/hermes-agent/issues
+    about: Bugs in the agent runtime, CLI, or gateway — not this mobile UI
+  - name: hermes-webui (upstream)
+    url: https://github.com/NousResearch/hermes-webui/issues
+    about: Bugs in the desktop WebUI itself

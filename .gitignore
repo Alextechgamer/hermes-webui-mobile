@@ -20,6 +20,9 @@ ios/DerivedData/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+*.ipa
+*.xcarchive
+ExportOptions.plist
 
 # Secrets / local runtime — never commit
 .env

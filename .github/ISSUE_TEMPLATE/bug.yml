@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the native iOS or Android client is wrong
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        File **Hermes Agent / hermes-webui server** bugs upstream, not here.
+        This form is for the native apps in this repository.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      placeholder: What you tapped, what you expected, what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context
+      placeholder: Screenshots help. Do not paste passwords, cookies, or private hostnames.

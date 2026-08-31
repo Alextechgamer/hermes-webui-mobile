@@ -67,8 +67,8 @@ the migration row.
 
 ## Auth
 
-- [ ] **First run** — URL field empty (no prefilled host). Proton Pass /
-  platform autofill offers to fill URL as username + password.
+- [ ] **First run** — URL field empty (no prefilled host). Platform
+  autofill / a password manager offers to fill URL as username + password.
 - [ ] **Password saved** — kill and relaunch: no password prompt. iOS: verify
   `webuiPassword` is NOT in UserDefaults after login
   (upgrade installs: it migrates to Keychain then is deleted).

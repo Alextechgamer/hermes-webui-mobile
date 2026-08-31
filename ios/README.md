@@ -1,8 +1,9 @@
 # iOS — native Hermes WebUI (Mac + Xcode)
 
 SwiftUI client for hermes-webui. **No WebView.** Same REST+SSE contract as
-Android (`docs/API.md`). Marketing version **0.9.12**. Launcher icon is the
-official Hermes caduceus (`Assets.xcassets/AppIcon`).
+Android ([docs/API.md](../docs/API.md)). Marketing version **1.0.0**
+(`CURRENT_PROJECT_VERSION` 36). Launcher icon is the official Hermes caduceus
+(`Assets.xcassets/AppIcon`).
 
 ```bash
 git pull
@@ -20,4 +21,4 @@ ATS: `NSAllowsArbitraryLoads` only (do not add `NSAllowsLocalNetworking`).
 
 Paperclip attaches Photos/Files (`POST /api/upload`). Folder chip opens workspace Files. Settings → Providers / Plugins / Extensions / System match Android.
 
-Linux cannot produce an iOS binary. Archive steps: `prompts/BUILD_IOS_ON_MAC.md`.
+Linux cannot produce an iOS binary. Archive steps: [docs/BUILD_IOS.md](../docs/BUILD_IOS.md).

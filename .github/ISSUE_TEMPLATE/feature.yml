@@ -1,0 +1,37 @@
+name: Feature request
+description: A WebUI control this native client is still missing
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo stays a **1:1 WebUI client**. Features that exist on desktop
+        hermes-webui and are missing here are in scope. Brand-new product ideas
+        that desktop does not have usually belong upstream, not here.
+  - type: textarea
+    id: desktop
+    attributes:
+      label: Desktop WebUI behavior
+      placeholder: Which rail panel / control on :8787 should this match?
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: API (if known)
+      placeholder: e.g. POST /api/session/rename  (see docs/API.md)
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Missing on
+      options:
+        - Both
+        - Android only
+        - iOS only
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
